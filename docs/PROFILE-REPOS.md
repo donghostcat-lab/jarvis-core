@@ -19,7 +19,7 @@ company AI). It depends on a pinned tag of `jarvis-core` and adds channels, tool
 
 ## Upgrading the core
 
-Bump the tag in `requirements.txt`, run the tests, read the version history in
+Bump the tag or release commit in `requirements.txt`, run the tests, read the version history in
 `jarvis-core/CLAUDE.md` for interface changes.
 
 ## Contributing back

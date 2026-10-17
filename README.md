@@ -30,10 +30,10 @@ Code comments and prompts are German, because the first users are German speakin
 ## Use it in a profile repo
 
 ```
-pip install "jarvis-core @ https://github.com/donghostcat-lab/jarvis-core/archive/refs/tags/v0.1.0.tar.gz"
+pip install "jarvis-core @ https://github.com/donghostcat-lab/jarvis-core/archive/<commit-or-tag>.tar.gz"
 ```
 
-Pin a tag. A profile repo adds its own channels (Telegram, Slack …) and tools on top of
+Pin a release tag or the commit of a release (v0.1.0 = `75b8436`), never `main`. A profile repo adds its own channels (Telegram, Slack …) and tools on top of
 `build_core_tools()`, and its own skills in `skills/<profile>/`. A neutral starter for a
 company profile is in [`templates/jarvis-job/`](templates/jarvis-job/); how to create a
 profile repo from it is described in [`docs/PROFILE-REPOS.md`](docs/PROFILE-REPOS.md).

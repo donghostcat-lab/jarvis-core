@@ -27,14 +27,15 @@ Antworten und Code-Kommentare auf Deutsch; README auf Englisch.
 
 ## Versionen
 
-- Version in `pyproject.toml` und `jarvis_core/__init__.py`, Tag `vX.Y.Z` pro Release.
-- Profil-Repos binden einen Tag fest ein (Tarball-URL), nie `main`.
+- Version in `pyproject.toml` und `jarvis_core/__init__.py`, Release mit Tag `vX.Y.Z`
+  (Tags legt Oliver in GitHub als Release an; Claude-Sitzungen können keine Tags pushen).
+- Profil-Repos binden einen Tag oder den Commit eines Releases fest ein (Tarball-URL), nie `main`.
 - Nach einem Release: Abhängigkeit in Jarvis (Home) und jarvis-job anheben, Roadmap in
   `donghostcat-lab/Jarvis` (`docs/roadmap.html`, Englisch) nachziehen.
 
 ### Versionshistorie
 
-- **v0.1.0** – Erste Abspaltung aus `donghostcat-lab/Jarvis` (Stand PR #11): Kern-Module,
+- **v0.1.0** (Commit `75b8436`) – Erste Abspaltung aus `donghostcat-lab/Jarvis` (Stand PR #11): Kern-Module,
   `build_core_tools`, eingebaute Skills `chief-of-staff` und `marketing-psychology`,
   `persona` pro Profil, Vorlage `templates/jarvis-job/`.
 
