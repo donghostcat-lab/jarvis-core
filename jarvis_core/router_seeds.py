@@ -1,0 +1,87 @@
+"""Startbeispiele für den Router. Werden mit echten, gelabelten Nachrichten ersetzt
+bzw. ergänzt (siehe `python -m jarvis.router export`)."""
+
+SENSITIVE = [
+    "Ich habe seit Tagen Brustschmerzen und mache mir Sorgen",
+    "Der Arzt hat bei mir eine Diagnose gestellt, was bedeutet das",
+    "Ich nehme Antidepressiva, kann ich dazu Alkohol trinken",
+    "Mir geht es psychisch gerade nicht gut",
+    "Wie hoch ist eigentlich mein Gehalt im Vergleich zu anderen",
+    "Unser Konto ist im Minus und wir haben Schulden",
+    "Wir streiten in letzter Zeit oft, ich weiß nicht weiter",
+    "Ich überlege, mich zu trennen",
+    "Wie lautet das Passwort für das Onlinebanking",
+    "Meine PIN ist vergessen, was soll ich tun",
+    "Ich habe Ärger mit dem Anwalt wegen der Scheidung",
+    "Das Jugendamt hat sich bei uns gemeldet",
+    "Mein Blutzucker war heute wieder viel zu hoch",
+    "Ich bin schwanger, aber es weiß noch niemand",
+    "Ich habe Angst, meinen Job zu verlieren",
+    "Was steht in meinem Arbeitsvertrag zur Kündigung",
+    "Meine Mutter hat Demenz, wie gehen wir damit um",
+    "Ich habe eine Abmahnung bekommen",
+    "Wie viel haben wir für die Steuer zurückgelegt",
+    "Ich fühle mich einsam und überfordert",
+]
+
+NORMAL = [
+    "Schreib Milch und Eier auf die Einkaufsliste",
+    "Wann kommt die Biotonne",
+    "Wie wird das Wetter morgen in Bonn",
+    "Erinnere mich morgen um acht an den Termin",
+    "Wie spät ist es",
+    "Erzähl mir einen Witz",
+    "Was ist die Hauptstadt von Australien",
+    "Hat das Hallenbad heute geöffnet",
+    "Wie lange muss ein Ei kochen",
+    "Mach das Licht im Wohnzimmer aus",
+    "Was läuft am Wochenende in Bonn für Kinder",
+    "Wann fährt die nächste Bahn nach Köln",
+    "Hilf mir bei den Mathe Hausaufgaben",
+    "Wie funktioniert ein Regenbogen",
+    "Ich brauche ein Rezept für Pfannkuchen",
+    "Was steht auf der Einkaufsliste",
+    "Welche Tonne muss heute raus",
+    "Gute Nacht Jarvis",
+    "Wie weit ist es nach Berlin",
+    "Erkläre mir den Unterschied zwischen Wetter und Klima",
+]
+
+INTENTS = {
+    "einkauf": [
+        "Schreib Milch auf die Liste", "Was steht auf der Einkaufsliste",
+        "Wir brauchen noch Brot und Butter", "Eier habe ich gekauft",
+        "Setz Kartoffeln auf die Einkaufsliste",
+    ],
+    "erinnerung": [
+        "Erinnere mich morgen an den Zahnarzt", "Erinner mich in zwei Stunden an die Wäsche",
+        "Welche Erinnerungen habe ich", "Lösche die Erinnerung",
+        "Erinnere Mia am Freitag an den Turnbeutel",
+    ],
+    "muell": [
+        "Wann kommt die Biotonne", "Welche Tonne muss raus", "Wann wird Papier abgeholt",
+        "Muss morgen der Restmüll raus", "Wann kommt die gelbe Tonne",
+    ],
+    "zeit": [
+        "Wie spät ist es", "Welcher Tag ist heute", "Welches Datum haben wir",
+        "Wie viel Uhr ist es gerade",
+    ],
+    "websuche": [
+        "Hat das Hallenbad heute geöffnet", "Was gibt es Neues in Bonn",
+        "Wann fährt die nächste Bahn nach Köln", "Wie wird das Wetter morgen",
+        "Was kostet ein Ticket für den Zoo",
+    ],
+    "haus": [
+        "Mach das Licht im Wohnzimmer aus", "Stell die Heizung auf 21 Grad",
+        "Öffne die Haustür", "Ist das Garagentor zu", "Schalte den Alarm ein",
+    ],
+    "smalltalk": [
+        "Erzähl mir einen Witz", "Gute Nacht Jarvis", "Wie geht es dir", "Danke dir",
+        "Hallo Jarvis",
+    ],
+    "wissen": [
+        "Wie funktioniert ein Regenbogen", "Erkläre mir die Photosynthese",
+        "Was ist die Hauptstadt von Australien", "Warum ist der Himmel blau",
+        "Hilf mir bei den Mathe Hausaufgaben", "Vergleiche zwei Angebote für eine Waschmaschine",
+    ],
+}

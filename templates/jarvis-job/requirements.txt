@@ -1,0 +1,4 @@
+# Kern mit fester Version (Tag). Neue Version: Tag in der URL anheben.
+jarvis-core @ https://github.com/donghostcat-lab/jarvis-core/archive/refs/tags/v0.1.0.tar.gz
+anthropic>=0.45
+httpx>=0.27

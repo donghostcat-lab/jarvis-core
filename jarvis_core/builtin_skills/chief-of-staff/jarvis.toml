@@ -1,0 +1,10 @@
+# Eigener Skill für Jarvis, angelehnt an (beide MIT, siehe CREDITS.md):
+# - jdpolasky/chief-of-staff-2 @ bdf884b: Jobs, Morgen-Struktur, nächste Handlung, lauter
+#   werdende Fristen, Wiedereinstieg, Profilfragen, „Anatomy“ (Skill dünn, Zustand getrennt)
+# - alirezarezvani/claude-skills @ 19392f7, c-level-advisor/skills/chief-of-staff:
+#   Struktur für Entscheidungen und Entscheidungslog mit Wiedervorlage
+# Zustand (Profil, Warte auf, Entscheidungen) liegt in jarvis/chief.py, nicht in dieser Datei.
+quelle = "eigen (Jarvis), angelehnt an https://github.com/jdpolasky/chief-of-staff-2 und https://github.com/alirezarezvani/claude-skills"
+version = "1.0.0"
+lizenz = "eigen; Vorlagen MIT (siehe CREDITS.md)"
+rollen = ["admin"]

@@ -1,0 +1,30 @@
+# CI: Tests des Kerns und der Job-Vorlage bei jedem Push auf main und jedem Pull Request.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Paket installieren
+        run: pip install -e ".[dev]" anthropic
+      - name: Tests des Kerns
+        run: pytest -q
+      - name: Tests der Job-Vorlage
+        working-directory: templates/jarvis-job
+        run: python -m pytest -q

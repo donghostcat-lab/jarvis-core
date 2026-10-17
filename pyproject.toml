@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jarvis-core"
+version = "0.1.0"
+description = "Shared core of Jarvis: Claude tool loop with roles and confirmations, private mode, local router, skills, chief of staff."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+router = ["fastembed>=0.5,<1"]
+dev = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["jarvis_core"]
+
+[tool.setuptools.package-data]
+jarvis_core = ["builtin_skills/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

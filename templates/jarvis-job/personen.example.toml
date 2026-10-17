@@ -1,0 +1,8 @@
+# Personen für Jarvis Job. Kopieren nach data/personen.toml.
+# Rollen kommen aus jarvis-core (admin, erwachsen, kind, gast); für das Team zunächst
+# admin (Projektverantwortliche Person) und erwachsen (Kolleginnen und Kollegen). Eigene Team-Rollen: siehe HANDOVER.
+
+[[person]]
+id = "admin"
+name = "Admin"
+rolle = "admin"
