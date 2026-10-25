@@ -6,5 +6,6 @@ dist/
 .pytest_cache/
 .env
 /data/
+.claude/forbidden-terms.txt
 .claude/verbotene-begriffe.txt
 .claude/settings.local.json

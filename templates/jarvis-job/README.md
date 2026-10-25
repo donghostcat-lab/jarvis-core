@@ -20,6 +20,6 @@ python -m jarvis_job.cli        # terminal chat
 | `jarvis_job/tools.py` | Core tools plus company tools |
 | `jarvis_job/cli.py` | Terminal adapter for trying things out; chat adapters come next as thin adapters |
 | `skills/job/` | Company skills (reviewed, pinned versions) |
-| `personen.example.toml` | People and roles, copy to `data/personen.toml` |
+| `people.example.toml` | People, roles and Slack ids, copy to `data/people.toml` |
 
 Data, keys and memory live only on the company servers, never in this repo.

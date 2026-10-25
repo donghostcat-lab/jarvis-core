@@ -1,4 +1,4 @@
-"""Tests für die Claude-Code-Hooks in .claude/hooks/guard.py."""
+"""Tests for the Claude Code hooks in .claude/hooks/guard.py."""
 
 import importlib.util
 import json
@@ -13,7 +13,7 @@ spec = importlib.util.spec_from_file_location("guard", GUARD)
 guard = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guard)
 
-# Beispielwerte zusammengesetzt, damit diese Datei selbst den Hook nicht auslöst.
+# Example values are put together so this file itself does not trigger the hook.
 FAKE_ANTHROPIC = "sk-" + "ant-" + "a1B2" * 8
 FAKE_TELEGRAM = "123456789" + ":" + "A" * 35
 FAKE_GOOGLE = "AI" + "za" + "x" * 35
@@ -24,40 +24,40 @@ FAKE_GOOGLE = "AI" + "za" + "x" * 35
     f"TELEGRAM_BOT_TOKEN={FAKE_TELEGRAM}",
     f"gemini: {FAKE_GOOGLE}",
     "-----BEGIN " + "PRIVATE KEY-----",
-    "BRING_PASSWORD=" + "geheim123",
+    "BRING_PASSWORD=" + "secret123",
 ])
-def test_findet_geheimnisse(line):
+def test_finds_secrets(line):
     assert guard.find_secrets(line)
 
 
 @pytest.mark.parametrize("line", [
     "ANTHROPIC_API_KEY=",
-    "BRING_PASSWORD=  # leer lassen",
+    "BRING_PASSWORD=  # leave empty",
     'bring_password=os.environ.get("BRING_PASSWORD", "") or None,',
-    "Kein Geheimnis hier.",
+    "No secret here.",
 ])
-def test_harmlose_zeilen(line):
+def test_harmless_lines(line):
     assert guard.find_secrets(line) == []
 
 
-def test_verbotene_begriffe_und_ausnahme():
-    text = "Wir wohnen in der Musterstraße 1\nMusterstraße 1  # guard: ok"
-    assert guard.find_secrets(text, ["musterstraße"]) == [(1, "verbotener Begriff")]
+def test_forbidden_terms_and_exception():
+    text = "We live at Musterstraße 1\nMusterstraße 1  # guard: ok"
+    assert guard.find_secrets(text, ["musterstraße"]) == [(1, "forbidden term")]
 
 
-@pytest.mark.parametrize("path,verboten", [
-    (".env", True), (".env.example", False), ("data/familie.toml", True),
+@pytest.mark.parametrize("path,forbidden", [
+    (".env", True), (".env.example", False), ("data/people.toml", True),
     ("google-dienstkonto.json", True), ("jarvis/core.py", False),
-    (".claude/verbotene-begriffe.txt", True),
+    (".claude/forbidden-terms.txt", True), (".claude/verbotene-begriffe.txt", True),
 ])
-def test_verbotene_pfade(path, verboten):
-    assert (guard.forbidden_path(path) is not None) is verboten
+def test_forbidden_paths(path, forbidden):
+    assert (guard.forbidden_path(path) is not None) is forbidden
 
 
-def test_added_lines_mit_zeilennummern():
-    diff = ("+++ b/a.py\n@@ -1,0 +3,2 @@\n+eins\n+zwei\n"
-            "+++ /dev/null\n@@ -1 +0,0 @@\n-weg\n")
-    assert guard.added_lines(diff) == {"a.py": [(3, "eins"), (4, "zwei")]}
+def test_added_lines_with_line_numbers():
+    diff = ("+++ b/a.py\n@@ -1,0 +3,2 @@\n+one\n+two\n"
+            "+++ /dev/null\n@@ -1 +0,0 @@\n-gone\n")
+    assert guard.added_lines(diff) == {"a.py": [(3, "one"), (4, "two")]}
 
 
 def _git(repo, *args):
@@ -69,7 +69,7 @@ def repo(tmp_path, monkeypatch):
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.email", "t@example.org")
     _git(tmp_path, "config", "user.name", "Test")
-    (tmp_path / "README.md").write_text("Hallo\n")
+    (tmp_path / "README.md").write_text("Hello\n")
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-qm", "start")
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
@@ -81,51 +81,52 @@ def _run(mode, event):
                           capture_output=True, text=True)
 
 
-def test_commit_mit_geheimnis_wird_blockiert(repo):
+def test_commit_with_secret_is_blocked(repo):
     (repo / "config.py").write_text(f"KEY = '{FAKE_ANTHROPIC}'\n")
     run = _run("bash", {"tool_input": {"command": "git add -A && git commit -m x"},
                         "cwd": str(repo)})
     assert run.returncode == 2
-    assert "config.py:1: Anthropic-Schlüssel" in run.stderr
+    assert "config.py:1: Anthropic key" in run.stderr
 
 
-def test_commit_mit_eigenem_begriff_wird_blockiert(repo):
+@pytest.mark.parametrize("terms_file", ["forbidden-terms.txt", "verbotene-begriffe.txt"])
+def test_commit_with_own_term_is_blocked(repo, terms_file):
     (repo / ".claude").mkdir()
-    (repo / ".claude" / "verbotene-begriffe.txt").write_text("# Adresse\nMusterweg\n")
-    (repo / ".gitignore").write_text(".claude/verbotene-begriffe.txt\n")
-    (repo / "README.md").write_text("Hallo\nWir wohnen am Musterweg.\n")
+    (repo / ".claude" / terms_file).write_text("# address\nMusterweg\n")
+    (repo / ".gitignore").write_text(f".claude/{terms_file}\n")
+    (repo / "README.md").write_text("Hello\nWe live on Musterweg.\n")
     run = _run("bash", {"tool_input": {"command": "git commit -am x"}, "cwd": str(repo)})
     assert run.returncode == 2
-    assert "README.md:2: verbotener Begriff" in run.stderr
+    assert "README.md:2: forbidden term" in run.stderr
 
 
-def test_harmloser_commit_und_fremdes_repo_laufen_durch(repo, tmp_path_factory):
-    (repo / "README.md").write_text("Hallo Welt\n")
+def test_harmless_commit_and_other_repo_pass(repo, tmp_path_factory):
+    (repo / "README.md").write_text("Hello world\n")
     assert _run("bash", {"tool_input": {"command": "git commit -am x"},
                          "cwd": str(repo)}).returncode == 0
-    other = tmp_path_factory.mktemp("anderes")
+    other = tmp_path_factory.mktemp("other")
     _git(other, "init", "-q")
     (other / "x.py").write_text(f"KEY = '{FAKE_ANTHROPIC}'\n")
     assert _run("bash", {"tool_input": {"command": "git commit -am x"},
                          "cwd": str(other)}).returncode == 0
 
 
-def test_andere_befehle_unberuehrt(repo):
+def test_other_commands_untouched(repo):
     (repo / "config.py").write_text(f"KEY = '{FAKE_ANTHROPIC}'\n")
     assert _run("bash", {"tool_input": {"command": "git status"},
                          "cwd": str(repo)}).returncode == 0
 
 
-def test_push_blockiert_bei_roten_tests(repo):
-    (repo / "test_rot.py").write_text("def test_rot():\n    assert False\n")
+def test_push_blocked_on_red_tests(repo):
+    (repo / "test_red.py").write_text("def test_red():\n    assert False\n")
     run = _run("bash", {"tool_input": {"command": "git push -u origin main"},
                         "cwd": str(repo)})
     assert run.returncode == 2
-    assert "Tests sind nicht grün" in run.stderr
+    assert "the tests are not green" in run.stderr
 
 
-def test_merge_erinnert_an_roadmap():
+def test_merge_reminds_about_release():
     run = _run("merged", {"tool_response": {"sha": "abc", "merged": True}})
     out = json.loads(run.stdout)
-    assert "Tag vX.Y.Z" in out["hookSpecificOutput"]["additionalContext"]
-    assert _run("merged", {"tool_response": "Merge fehlgeschlagen"}).stdout == ""
+    assert "tag vX.Y.Z" in out["hookSpecificOutput"]["additionalContext"]
+    assert _run("merged", {"tool_response": "Merge failed"}).stdout == ""

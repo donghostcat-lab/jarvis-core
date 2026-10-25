@@ -1,10 +1,10 @@
-"""Einstellungen aus Umgebungsvariablen (.env)."""
+"""Settings from environment variables (.env)."""
 
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
-PERSONA = "der Assistent des Teams"
+PERSONA = "the team's assistant"
 
 
 @dataclass(frozen=True)

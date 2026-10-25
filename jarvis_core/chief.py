@@ -1,12 +1,12 @@
-"""Chief of Staff: der Zustand hinter dem Skill `chief-of-staff` (SQLite).
+"""Chief of staff: the state behind the skill `chief-of-staff` (SQLite).
 
-Nach der „Anatomy“ aus chief-of-staff-2: Der Skill ist nur die Anleitung, der
-aktuelle Stand liegt hier.
-- Profil: wer die Person ist, ihre Bereiche, wie sie hängen bleibt, was geholfen hat
-  (einmal im Einrichtungs-Interview erfragt, danach nachjustiert).
-- Warte auf: was von wem bis wann kommen soll; Überfälliges meldet der Morgenbrief.
-- Entscheidungen: was entschieden wurde, von wem umgesetzt, wann wieder anschauen.
-Alles gehört genau einer Person; niemand sieht die Einträge anderer.
+After the "anatomy" of chief-of-staff-2: the skill is only the instructions, the current
+state lives here.
+- Profile: who the person is, their areas, how they get stuck, what has helped
+  (asked once in the set-up interview, adjusted later).
+- Waiting for: what should come from whom by when; the morning brief reports overdue items.
+- Decisions: what was decided, who carries it out, when to look at it again.
+Everything belongs to exactly one person; nobody sees the entries of others.
 """
 
 import json
@@ -17,14 +17,18 @@ from datetime import date
 from pathlib import Path
 
 PROFILE_FIELDS = {
-    "rolle": "Was du machst, beruflich und privat",
-    "bereiche": "Deine Lebens- und Arbeitsbereiche, um die sich Jarvis kümmern soll",
-    "personen": "Die wichtigsten Menschen und wofür sie stehen",
-    "prioritaeten": "Was in den nächsten Monaten wirklich zählt",
-    "haengen": "Wie du typischerweise hängen bleibst (ehrlich, nicht geschönt)",
-    "geholfen": "Was dir früher geholfen hat",
-    "stil": "Wie Jarvis mit dir reden soll",
+    "role": "What you do, at work and in private",
+    "areas": "The areas of your life and work that Jarvis should look after",
+    "people": "The most important people and what they stand for",
+    "priorities": "What really matters in the coming months",
+    "stuck": "How you typically get stuck (honestly, not polished)",
+    "helped": "What has helped you before",
+    "style": "How Jarvis should talk to you",
 }
+# Field names of v0.1.0 profiles; translated when a profile is read.
+_OLD_FIELDS = {"rolle": "role", "bereiche": "areas", "personen": "people",
+               "prioritaeten": "priorities", "haengen": "stuck", "geholfen": "helped",
+               "stil": "style"}
 
 
 @dataclass(frozen=True)
@@ -68,11 +72,12 @@ class ChiefStore:
         )
         self._db.commit()
 
-    # ---------- Profil ----------
+    # ---------- Profile ----------
 
     def profile(self, user_id: str) -> dict[str, str]:
         row = self._db.execute("SELECT data FROM cos_profile WHERE user_id = ?", (user_id,)).fetchone()
-        return json.loads(row[0]) if row else {}
+        data = json.loads(row[0]) if row else {}
+        return {_OLD_FIELDS.get(k, k): v for k, v in data.items()}
 
     def profile_created(self, user_id: str) -> float | None:
         row = self._db.execute("SELECT created FROM cos_profile WHERE user_id = ?", (user_id,)).fetchone()
@@ -80,7 +85,7 @@ class ChiefStore:
 
     def profile_set(self, user_id: str, field: str, text: str) -> None:
         if field not in PROFILE_FIELDS:
-            raise ValueError(f"Unbekanntes Profilfeld {field!r}")
+            raise ValueError(f"Unknown profile field {field!r}")
         data = self.profile(user_id)
         data[field] = text.strip()
         now = time.time()
@@ -90,7 +95,7 @@ class ChiefStore:
             (user_id, json.dumps(data, ensure_ascii=False), now, now))
         self._db.commit()
 
-    # ---------- Warte auf ----------
+    # ---------- Waiting for ----------
 
     def waiting_add(self, user_id: str, what: str, who: str = "", due: date | None = None) -> int:
         cur = self._db.execute(
@@ -112,7 +117,7 @@ class ChiefStore:
         self._db.commit()
         return cur.rowcount > 0
 
-    # ---------- Entscheidungen ----------
+    # ---------- Decisions ----------
 
     def decision_add(self, user_id: str, title: str, decided: str, owner: str = "",
                      review: date | None = None) -> int:
@@ -145,10 +150,10 @@ class ChiefStore:
         self._db.commit()
         return cur.rowcount > 0
 
-    # ---------- Für den Morgenbrief ----------
+    # ---------- For the morning brief ----------
 
     def waiting_due(self, user_id: str, today: date, days: int = 3) -> list[Waiting]:
-        """Überfällig oder in den nächsten `days` Tagen fällig."""
+        """Overdue or due within the next `days` days."""
         return [w for w in self.waiting_open(user_id)
                 if w.due is not None and (w.due - today).days <= days]
 
@@ -157,12 +162,12 @@ class ChiefStore:
 
 
 def urgency(due: date, today: date) -> str:
-    """Je näher die Frist, desto lauter (chief-of-staff-2, Planner)."""
+    """The closer the deadline, the louder (chief-of-staff-2, planner)."""
     days = (due - today).days
     if days < 0:
-        return f"⚠️ seit {-days} {'Tag' if days == -1 else 'Tagen'} überfällig"
+        return f"⚠️ overdue by {-days} {'day' if days == -1 else 'days'}"
     if days == 0:
-        return "⚠️ heute fällig"
+        return "⚠️ due today"
     if days == 1:
-        return "morgen fällig"
-    return f"fällig {due:%d.%m.}"
+        return "due tomorrow"
+    return f"due {due:%d %b}"

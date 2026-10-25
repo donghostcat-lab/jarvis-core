@@ -1,7 +1,7 @@
-# Übernommen aus coreyhaines31/marketingskills, SKILL.md unverändert.
-# Vor jeder Aktualisierung neu lesen und Version/Commit hier anpassen.
-quelle = "https://github.com/coreyhaines31/marketingskills/tree/365b412152b9542499ca1439426f7fc3cc92bb65/skills/marketing-psychology"
+# Taken from coreyhaines31/marketingskills, SKILL.md unchanged.
+# Read it again before every update and adjust version/commit here.
+source = "https://github.com/coreyhaines31/marketingskills/tree/365b412152b9542499ca1439426f7fc3cc92bb65/skills/marketing-psychology"
 version = "2.0.0"
-lizenz = "MIT (siehe LICENSE)"
-rollen = "erwachsene"
-beschreibung = "Psychologische Prinzipien und Denkmodelle für Marketing: warum Menschen kaufen, Preise, Angebote und Werbetexte, Vertrauen, Dringlichkeit – ethisch angewandt. Für Fragen zu Marketing, Kundenverhalten, Angeboten oder Texten."
+license = "MIT (see LICENSE)"
+roles = "adults"
+description = "Psychological principles and mental models for marketing: why people buy, pricing, offers and copy, trust, urgency, applied ethically. For questions about marketing, customer behaviour, offers or copy."

@@ -3,5 +3,5 @@ __pycache__/
 .pytest_cache/
 .env
 /data/
-.claude/verbotene-begriffe.txt
+.claude/forbidden-terms.txt
 .claude/settings.local.json

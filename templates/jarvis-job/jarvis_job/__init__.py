@@ -1,1 +1,1 @@
-"""Jarvis Job: Company AI auf Basis von jarvis-core (lokal zuerst)."""
+"""Jarvis Job: company AI based on jarvis-core (local first)."""

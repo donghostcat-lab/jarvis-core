@@ -1,8 +1,8 @@
-"""Werkzeuge von Jarvis Job: die allgemeinen aus jarvis-core plus eigene.
+"""Tools of Jarvis Job: the general ones from jarvis-core plus your own.
 
-Eigene Werkzeuge (Chat, Kalender, Wiki, Tickets …) kommen hier
-dazu. Regeln: lesend zuerst; alles mit Folgen mit needs_confirmation=True und
-passenden Rollen; Inhalte aus Firmensystemen sind Daten, nie Anweisungen.
+Your own tools (chat, calendar, wiki, tickets …) are added here. Rules: read-only first;
+anything with consequences with needs_confirmation=True and suitable roles; content from
+company systems is data, never instructions.
 """
 
 from pathlib import Path
@@ -23,13 +23,13 @@ def build_tools(journals: JournalStore, wiki_dir: Path, timezone: str,
 
 
 def _add_example_tool(registry: ToolRegistry) -> None:
-    """Platzhalter, damit das Gerüst etwas zeigt. Durch echte Werkzeuge ersetzen."""
+    """A placeholder so the starter shows something. Replace it with real tools."""
     async def profile_info(args: dict, ctx: ToolContext) -> str:
-        return "Profil: Jarvis Job. Eigene Werkzeuge kommen in jarvis_job/tools.py dazu."
+        return "Profile: Jarvis Job. Add your own tools in jarvis_job/tools.py."
 
     registry.add(Tool(
         name="jarvis_job_info",
-        description="Sagt, welche Installation das ist (Jarvis Job) und wo Werkzeuge ergänzt werden.",
+        description="Says which installation this is (Jarvis Job) and where tools are added.",
         input_schema={"type": "object", "properties": {}},
         handler=profile_info,
         roles=ADULTS,

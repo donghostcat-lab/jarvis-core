@@ -24,14 +24,14 @@ def settings(tmp_path: Path) -> Settings:
                     skills_dir=Path(__file__).resolve().parents[1] / "skills")
 
 
-def test_geruest_antwortet_mit_job_persona(tmp_path):
-    client = FakeClient("Hallo")
+def test_starter_answers_with_job_persona(tmp_path):
+    client = FakeClient("Hello")
     jarvis, users = build(settings(tmp_path), client=client)
     user = next(iter(users))
     reply = asyncio.run(jarvis.handle(user, "Hi", "cli"))
-    assert reply.text == "Hallo"
+    assert reply.text == "Hello"
     system = client.calls[0]["system"][0]["text"]
-    assert "Du bist Jarvis, der Assistent des Teams." in system
-    assert "chief-of-staff" in system  # eingebauter Skill des Kerns
+    assert "You are Jarvis, the team's assistant." in system
+    assert "chief-of-staff" in system  # built-in skill of the core
     names = {t["name"] for t in client.calls[0]["tools"]}
-    assert {"jarvis_job_info", "skill_laden", "warte_auf"} <= names
+    assert {"jarvis_job_info", "load_skill", "waiting_for", "share_note"} <= names

@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Hooks für Claude Code in diesem Repo (eingetragen in .claude/settings.json).
+"""Hooks for Claude Code in this repo (registered in .claude/settings.json).
 
-  guard.py bash    PreToolUse für Bash:
-                   - vor `git commit`: blockiert, wenn Geheimnisse oder private Daten
-                     im Diff stehen (Schlüssel, .env, data/, Dienstkonto, eigene Begriffe)
-                   - vor `git push`: blockiert, wenn die Tests nicht grün sind
-  guard.py merged  PostToolUse nach einem PR-Merge: erinnert an die Roadmap-Seite
+  guard.py bash    PreToolUse for Bash:
+                   - before `git commit`: blocks if secrets or private data are in the
+                     diff (keys, .env, data/, service account, your own terms)
+                   - before `git push`: blocks if the tests are not green
+  guard.py merged  PostToolUse after a PR merge: a reminder about the release steps
 
-Exit-Code 2 blockiert den Befehl; die Meldung auf stderr bekommt Claude zu sehen.
-Eigene Begriffe (z. B. Straßenname) stehen in .claude/verbotene-begriffe.txt; die Datei
-ist in .gitignore, damit die Begriffe selbst nie ins Repo gelangen.
-Eine Zeile mit „guard: ok“ wird übersprungen (für bewusste Ausnahmen).
+Exit code 2 blocks the command; Claude sees the message on stderr.
+Your own terms (e.g. a street name) go in .claude/forbidden-terms.txt (the v0.1.0 name
+.claude/verbotene-begriffe.txt is still read); the file is in .gitignore, so the terms
+themselves never reach the repo.
+A line containing "guard: ok" is skipped (for deliberate exceptions).
 """
 
 import json
@@ -21,17 +22,18 @@ import sys
 from pathlib import Path
 
 ROADMAP_URL = "https://claude.ai/artifact/R63XbmKYty5DD5RW9QfGYX"
-TERMS_FILE = Path(".claude") / "verbotene-begriffe.txt"
+TERMS_FILE = Path(".claude") / "forbidden-terms.txt"
+OLD_TERMS_FILE = Path(".claude") / "verbotene-begriffe.txt"
 SKIP_MARK = "guard: ok"
 
 SECRET_PATTERNS = [
-    ("Anthropic-Schlüssel", re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}")),
-    ("OpenAI-artiger Schlüssel", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9]{32,}")),
-    ("Google-API-Schlüssel", re.compile(r"AIza[0-9A-Za-z_-]{35}")),
-    ("Telegram-Bot-Token", re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b")),
-    ("GitHub-Token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}")),
-    ("privater Schlüssel", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
-    ("Zugangsdaten in Umgebungsvariable",
+    ("Anthropic key", re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}")),
+    ("OpenAI-style key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9]{32,}")),
+    ("Google API key", re.compile(r"AIza[0-9A-Za-z_-]{35}")),
+    ("Telegram bot token", re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b")),
+    ("GitHub token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}")),
+    ("private key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+    ("credentials in an environment variable",
      re.compile(r"^\s*[A-Z0-9_]*(?:KEY|TOKEN|PASSWORD|SECRET)[A-Z0-9_]*\s*=\s*[^\s#]{8,}")),
 ]
 
@@ -41,21 +43,21 @@ PUSH_RE = re.compile(GIT_CMD + r"push\b")
 
 
 def forbidden_path(path: str) -> str | None:
-    """Grund, warum die Datei nie ins Repo darf, sonst None."""
+    """The reason why the file may never go into the repo, else None."""
     p = Path(path)
     if p.name == ".env":
-        return ".env enthält Zugangsdaten"
+        return ".env holds credentials"
     if p.parts and p.parts[0] in ("data", "wiki"):
-        return f"{p.parts[0]}/ enthält private Daten der Familie"
+        return f"{p.parts[0]}/ holds private data"
     if "dienstkonto" in p.name.lower() or p.suffix in (".pem", ".key"):
-        return "Schlüsseldatei"
-    if p.name == TERMS_FILE.name:
-        return "Liste verbotener Begriffe"
+        return "key file"
+    if p.name in (TERMS_FILE.name, OLD_TERMS_FILE.name):
+        return "list of forbidden terms"
     return None
 
 
 def find_secrets(text: str, terms: list[str] = ()) -> list[tuple[int, str]]:
-    """(Zeilennummer, Art) für jede verdächtige Zeile."""
+    """(line number, kind) for each suspicious line."""
     hits = []
     lowered_terms = [t.lower() for t in terms if t.strip()]
     for no, line in enumerate(text.splitlines(), 1):
@@ -68,12 +70,12 @@ def find_secrets(text: str, terms: list[str] = ()) -> list[tuple[int, str]]:
         else:
             low = line.lower()
             if any(t in low for t in lowered_terms):
-                hits.append((no, "verbotener Begriff"))
+                hits.append((no, "forbidden term"))
     return hits
 
 
 def added_lines(diff: str) -> dict[str, list[tuple[int, str]]]:
-    """Hinzugefügte Zeilen aus `git diff -U0` je Datei, mit Zeilennummer im neuen Stand."""
+    """Added lines from `git diff -U0` per file, with the line number in the new version."""
     result: dict[str, list[tuple[int, str]]] = {}
     current = None
     line_no = 0
@@ -98,18 +100,19 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def load_terms(repo: Path) -> list[str]:
-    path = repo / TERMS_FILE
-    if not path.exists():
-        return []
-    return [l.strip() for l in path.read_text(encoding="utf-8").splitlines()
-            if l.strip() and not l.startswith("#")]
+    terms = []
+    for path in (repo / TERMS_FILE, repo / OLD_TERMS_FILE):
+        if path.exists():
+            terms += [l.strip() for l in path.read_text(encoding="utf-8").splitlines()
+                      if l.strip() and not l.startswith("#")]
+    return terms
 
 
 def scan_repo(repo: Path) -> list[str]:
-    """Prüft alle Änderungen, die ein Commit mitnehmen könnte: geänderte und neue Dateien.
+    """Checks every change a commit could take along: changed and new files.
 
-    Bewusst großzügig (nicht nur der Index), weil Befehle wie `git add -A && git commit`
-    erst nach dem Hook etwas zum Index hinzufügen.
+    Deliberately generous (not only the index), because commands like
+    `git add -A && git commit` add to the index only after the hook has run.
     """
     terms = load_terms(repo)
     problems = []
@@ -139,7 +142,7 @@ def scan_repo(repo: Path) -> list[str]:
 
 
 def _target_repo(command_match: re.Match, cwd: str) -> Path | None:
-    """Nur eingreifen, wenn der Befehl dieses Repo betrifft."""
+    """Only step in when the command concerns this repo."""
     project = Path(os.environ.get("CLAUDE_PROJECT_DIR") or Path(__file__).resolve().parents[2])
     base = Path(cwd or ".")
     target = base / command_match.group("dir") if command_match.group("dir") else base
@@ -157,9 +160,9 @@ def on_bash(event: dict) -> int:
     if commit and (repo := _target_repo(commit, cwd)):
         problems = scan_repo(repo)
         if problems:
-            print("Commit blockiert – mögliche Geheimnisse oder private Daten:\n  "
+            print("Commit blocked: possible secrets or private data:\n  "
                   + "\n  ".join(problems)
-                  + "\nEntfernen oder, falls harmlos, die Zeile mit „guard: ok“ markieren.",
+                  + "\nRemove them or, if harmless, mark the line with \"guard: ok\".",
                   file=sys.stderr)
             return 2
     push = PUSH_RE.search(command)
@@ -168,7 +171,7 @@ def on_bash(event: dict) -> int:
                              capture_output=True, text=True, check=False, timeout=540)
         if run.returncode != 0:
             tail = "\n".join((run.stdout + run.stderr).strip().splitlines()[-25:])
-            print(f"Push blockiert – Tests sind nicht grün:\n{tail}", file=sys.stderr)
+            print(f"Push blocked: the tests are not green:\n{tail}", file=sys.stderr)
             return 2
     return 0
 
@@ -181,10 +184,10 @@ def on_merged(event: dict) -> int:
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PostToolUse",
         "additionalContext": (
-            "PR in jarvis-core gemergt. Laut CLAUDE.md: Version in pyproject.toml und "
-            "jarvis_core/__init__.py anheben, Tag vX.Y.Z setzen, in den Profil-Repos die "
-            "Abhängigkeit anheben und die Roadmap in jarvis-home (docs/roadmap.html) "
-            f"nachziehen und unter {ROADMAP_URL} neu veröffentlichen."),
+            "PR merged in jarvis-core. Per CLAUDE.md: raise the version in pyproject.toml and "
+            "jarvis_core/__init__.py, have tag vX.Y.Z set as a release, raise the dependency "
+            "in the profile repos, update the roadmap in jarvis-home (docs/roadmap.html) "
+            f"and publish it again at {ROADMAP_URL}."),
     }}))
     return 0
 

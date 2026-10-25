@@ -1,11 +1,15 @@
-"""Journal: jedes Gespräch als Markdown, eine Datei pro Tag.
+"""Journal: every conversation as Markdown, one file per day.
 
-Das Journal ist die Rohquelle, aus der OpenWiki später das Langzeitgedächtnis baut.
+The journal is the raw source from which OpenWiki later builds long-term memory.
 """
 
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+# File and folder names on disk stay as in v0.1.0, so existing journals keep working.
+NOTES_FILE = "notizen.md"
+HOUSEHOLD = "haushalt"
 
 
 class Journal:
@@ -35,21 +39,18 @@ class Journal:
 
     def add_note(self, text: str) -> Path:
         now = datetime.now(self.tz)
-        path = self.root / "notizen.md"
+        path = self.root / NOTES_FILE
         if not path.exists():
-            path.write_text("# Notizen\n\n", encoding="utf-8")
+            path.write_text("# Notes\n\n", encoding="utf-8")
         with path.open("a", encoding="utf-8") as f:
             f.write(f"- {now:%Y-%m-%d %H:%M}: {text.strip()}\n")
         return path
 
 
-HOUSEHOLD = "haushalt"
-
-
 class JournalStore:
-    """Ein Journal pro Person plus ein gemeinsames für den Haushalt.
+    """One journal per person plus a shared one for everyone (the household or the team).
 
-    Layout: <root>/<personen-id>/JJJJ/MM/JJJJ-MM-TT.md und <root>/haushalt/...
+    Layout: <root>/<person-id>/YYYY/MM/YYYY-MM-DD.md and <root>/haushalt/...
     """
 
     def __init__(self, root: Path, timezone: str):
@@ -67,4 +68,5 @@ class JournalStore:
 
     @property
     def household(self) -> Journal:
-        return self._get(HOUSEHOLD, "Haushalt")
+        """The shared journal: notes for everyone."""
+        return self._get(HOUSEHOLD, "Everyone")

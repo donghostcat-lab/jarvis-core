@@ -1,7 +1,7 @@
-"""Dauerhafter Zustand in SQLite: Privatmodus, offene Bestätigungen, Verbrauch.
+"""Lasting state in SQLite: private mode, pending confirmations, usage.
 
-Liegt bewusst nicht im Arbeitsspeicher: Nach einem Neustart soll niemand, der
-im Privatmodus war, plötzlich unbemerkt wieder mit einem Cloud-Modell sprechen.
+Deliberately not kept in memory: after a restart nobody who was in private mode
+may suddenly talk to a cloud model again without noticing.
 """
 
 import json
@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .brain import PendingAction
 
-PENDING_TTL = 15 * 60  # Sekunden; ältere Bestätigungsfragen gelten als abgelaufen
+PENDING_TTL = 15 * 60  # seconds; older confirmation questions count as expired
 
 
 class StateStore:
@@ -30,13 +30,13 @@ class StateStore:
             " provider TEXT NOT NULL, model TEXT NOT NULL,"
             " input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, ts REAL NOT NULL);"
             "CREATE INDEX IF NOT EXISTS usage_day ON usage (day);"
-            # Letzte Nachricht per Text (Telegram, auch privat); Sprache zählt nicht.
+            # Last text message (Telegram, private ones too); voice does not count.
             "CREATE TABLE IF NOT EXISTS last_contact (user_id TEXT PRIMARY KEY, ts REAL NOT NULL);"
         )
         self._db.commit()
         self.pending_ttl = pending_ttl
 
-    # ---------- Letzter Kontakt (für den Wiedereinstieg) ----------
+    # ---------- Last contact (for re-entry) ----------
 
     def touch(self, user_id: str, ts: float | None = None) -> None:
         self._db.execute("INSERT OR REPLACE INTO last_contact (user_id, ts) VALUES (?, ?)",
@@ -47,7 +47,7 @@ class StateStore:
         row = self._db.execute("SELECT ts FROM last_contact WHERE user_id = ?", (user_id,)).fetchone()
         return row[0] if row else None
 
-    # ---------- Privatmodus ----------
+    # ---------- Private mode ----------
 
     def is_private(self, user_id: str) -> bool:
         row = self._db.execute("SELECT 1 FROM private_mode WHERE user_id = ?", (user_id,)).fetchone()
@@ -60,7 +60,7 @@ class StateStore:
             self._db.execute("DELETE FROM private_mode WHERE user_id = ?", (user_id,))
         self._db.commit()
 
-    # ---------- Offene Bestätigungen (eine pro Person) ----------
+    # ---------- Pending confirmations (one per person) ----------
 
     def put_pending(self, user_id: str, token: str, channel: str, pending: PendingAction) -> None:
         self._db.execute(
@@ -70,7 +70,7 @@ class StateStore:
         self._db.commit()
 
     def pop_pending(self, user_id: str, token: str) -> tuple[str, PendingAction] | None:
-        """Holt und löscht die offene Aktion, wenn Token passt und sie nicht abgelaufen ist."""
+        """Takes and deletes the pending action if the token matches and it has not expired."""
         row = self._db.execute(
             "SELECT token, channel, payload, ts FROM pending WHERE user_id = ?", (user_id,)
         ).fetchone()
@@ -85,7 +85,7 @@ class StateStore:
         self._db.execute("DELETE FROM pending WHERE user_id = ?", (user_id,))
         self._db.commit()
 
-    # ---------- Verbrauch ----------
+    # ---------- Usage ----------
 
     def record_usage(self, day: str, user_id: str, provider: str, model: str,
                      input_tokens: int, output_tokens: int) -> None:
@@ -105,7 +105,7 @@ class StateStore:
         return self._db.execute(sql, params).fetchone()[0]
 
     def usage_on(self, day: str) -> list[tuple[str, int, int]]:
-        """(Anbieter, Eingabe-Tokens, Ausgabe-Tokens) pro Anbieter für einen Tag."""
+        """(provider, input tokens, output tokens) per provider for one day."""
         return self._db.execute(
             "SELECT provider, SUM(input_tokens), SUM(output_tokens) FROM usage"
             " WHERE day = ? GROUP BY provider ORDER BY provider", (day,)

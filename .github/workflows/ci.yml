@@ -1,4 +1,4 @@
-# CI: Tests des Kerns und der Job-Vorlage bei jedem Push auf main und jedem Pull Request.
+# CI: tests of the core and the job template on every push to main and every pull request.
 name: CI
 
 on:
@@ -21,10 +21,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Paket installieren
+      - name: Install package
         run: pip install -e ".[dev]" anthropic
-      - name: Tests des Kerns
+      - name: Core tests
         run: pytest -q
-      - name: Tests der Job-Vorlage
+      - name: Job template tests
         working-directory: templates/jarvis-job
         run: python -m pytest -q

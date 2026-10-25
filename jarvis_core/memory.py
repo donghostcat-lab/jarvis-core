@@ -1,4 +1,4 @@
-"""Kurzzeitgedächtnis: die letzten Gesprächsrunden pro Person in SQLite."""
+"""Short-term memory: the last conversation turns per person in SQLite."""
 
 import sqlite3
 import time
@@ -35,7 +35,7 @@ class ShortTermMemory:
             (user_id, self._max_messages),
         ).fetchall()
         messages = [{"role": r, "content": c} for r, c in reversed(rows)]
-        # Die API erwartet, dass der Verlauf mit einer Nutzer-Nachricht beginnt.
+        # The API expects the history to start with a user message.
         while messages and messages[0]["role"] != "user":
             messages.pop(0)
         return messages

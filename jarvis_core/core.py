@@ -1,8 +1,12 @@
-"""Der Jarvis-Kern: unabhängig vom Zugang (Telegram, später Alexa, App, Home Assistant).
+"""The Jarvis core: independent of the channel (Telegram, Slack, Alexa, app, Home Assistant).
 
-Ein Zugang ermittelt die Person, ruft `handle` auf und zeigt die `Reply` an.
-Bei einer Bestätigungsfrage holt er die Antwort ein und ruft `take_pending`
-und danach `resume` auf.
+A channel finds the person, calls `handle` and shows the `Reply`. For a confirmation
+question it collects the answer and calls `take_pending` and then `resume`.
+
+Protect mode (`protect=True`, needs a router): every message is classified by the local
+router before any model sees it. A message the router finds sensitive, or one it cannot
+classify, is answered like private mode: by the local model, with the private memory and
+journal, never by a cloud model. Everything else goes to Claude as usual.
 """
 
 import logging
@@ -21,25 +25,26 @@ from .users import ADULTS, Role, User
 
 log = logging.getLogger(__name__)
 
-# Ab so vielen Tagen Pause beginnt die Antwort mit einem Wiedereinstieg.
+# From this many days of silence on, the answer starts with a re-entry.
 REENTRY_DAYS = 3
 
 PRIVATE_SYSTEM = (
-    "Du bist Jarvis, {persona}, und sprichst mit {user}. Dieses "
-    "Gespräch ist vertraulich und läuft auf einem lokalen Modell. Antworte knapp auf {language}."
+    "You are Jarvis, {persona}, talking to {user}. This conversation is confidential "
+    "and runs on a local model. Answer briefly in {language}."
 )
 FALLBACK_SYSTEM = (
-    "Du bist Jarvis, {persona}, und sprichst mit {user}. Du bist gerade "
-    "das Ausweichmodell und hast keine Werkzeuge: kein Wiki, kein Journal, keine Haussteuerung. "
-    "Sag das ehrlich, wenn eine Frage sie bräuchte. Antworte knapp auf {language}."
+    "You are Jarvis, {persona}, talking to {user}. Right now you are the fallback model "
+    "and have no tools: no wiki, no journal, no actions. Say so honestly when a question "
+    "would need them. Answer briefly in {language}."
 )
-FALLBACK_NOTE = "\n\n(Ausweichmodell ohne Werkzeuge)"
+FALLBACK_NOTE = "\n\n(fallback model without tools)"
+PROTECT_NOTE = "\n\n(sensitive topic: answered by the local model)"
 
 
 @dataclass
 class Reply:
     text: str = ""
-    confirm_token: str | None = None  # gesetzt, wenn eine Bestätigung nötig ist
+    confirm_token: str | None = None  # set when a confirmation is needed
     question: str | None = None
 
 
@@ -57,7 +62,9 @@ class Jarvis:
                  fallback: ChatProvider | None = None,
                  daily_token_budget: int = 0,
                  voice_brain: Brain | None = None,
-                 router=None):
+                 router=None, protect: bool = False):
+        if protect and router is None:
+            raise ValueError("Protect mode needs a router.")
         self.brain = brain
         self.state = state
         self.memory = memory
@@ -68,12 +75,13 @@ class Jarvis:
         self.local_llm = local_llm
         self.fallback = fallback
         self.daily_token_budget = daily_token_budget
-        # Schnelleres Modell für Sprachzugänge (Alexa erwartet eine Antwort in ~8 s).
+        # A faster model for voice channels (Alexa expects an answer within ~8 s).
         self.voice_brain = voice_brain or brain
-        # Router im Beobachtungsmodus (router.py): entscheidet mit, greift aber nicht ein.
+        # Router (router.py): only observes, unless protect mode lets it decide.
         self.router = router
+        self.protect = protect
 
-    # ---------- Hilfen ----------
+    # ---------- Helpers ----------
 
     def today(self) -> str:
         return datetime.now(self.tz).strftime("%Y-%m-%d")
@@ -84,33 +92,33 @@ class Jarvis:
             self.state.record_usage(self.today(), user_id, provider, model,
                                     input_tokens, output_tokens)
 
-    # Alle unbekannten Stimmen teilen sich den Gast. Ohne Verlauf kann niemand
-    # erfragen, was eine andere Person vorher gefragt hat.
+    # All unknown voices share the guest. Without history nobody can ask what another
+    # person asked before.
     def _history(self, user: User) -> list[dict]:
-        return [] if user.role is Role.GAST else self.memory.history(user.id)
+        return [] if user.role is Role.GUEST else self.memory.history(user.id)
 
     def _remember(self, user: User, user_text: str, reply: str) -> None:
-        if user.role is not Role.GAST:
+        if user.role is not Role.GUEST:
             self.memory.add_exchange(user.id, user_text, reply)
 
     def _reentry_note(self, user: User) -> str:
-        """Nach längerer Pause beginnt die Antwort mit einem Wiedereinstieg (chief-of-staff-2)."""
+        """After a longer break the answer starts with a re-entry (chief-of-staff-2)."""
         last = self.state.last_contact(user.id)
         if last is None:
             return ""
         days = int((time.time() - last) // 86400)
         if days < REENTRY_DAYS:
             return ""
-        since = datetime.fromtimestamp(last, self.tz).strftime("%d.%m.%Y")
-        return (f"- {user.name} war {days} Tage nicht hier (zuletzt am {since}). Beginne mit einem "
-                "kurzen Wiedereinstieg: was sich geändert hat, was jetzt dringend ist und genau "
-                "ein nächster Schritt. Erst danach die eigentliche Frage.\n")
+        since = datetime.fromtimestamp(last, self.tz).strftime("%Y-%m-%d")
+        return (f"- {user.name} has not been here for {days} days (last time on {since}). Start "
+                "with a short re-entry: what has changed, what is urgent now and exactly one "
+                "next step. Only then the actual question.\n")
 
     def _over_budget(self, provider: str) -> bool:
         return (self.daily_token_budget > 0
                 and self.state.tokens_on(self.today(), provider) >= self.daily_token_budget)
 
-    # ---------- Befehle ----------
+    # ---------- Commands ----------
 
     def is_private(self, user: User) -> bool:
         return self.state.is_private(user.id)
@@ -118,11 +126,11 @@ class Jarvis:
     def toggle_private(self, user: User) -> str:
         if self.state.is_private(user.id):
             self.state.set_private(user.id, False)
-            return "Privatmodus aus. Ab jetzt wieder Claude."
+            return "Private mode off. Messages go to Claude again."
         self.state.set_private(user.id, True)
-        msg = "Privatmodus an. Nachrichten gehen an das lokale Modell und nicht ins Wiki."
+        msg = "Private mode on. Messages go to the local model and not into the wiki."
         if self.local_llm is None:
-            msg += "\n\nHinweis: LOCAL_LLM_URL ist noch nicht gesetzt, der Privatmodus antwortet erst danach."
+            msg += "\n\nNote: no local model is set up yet, so private mode cannot answer until it is."
         return msg
 
     def cancel_pending(self, user: User) -> None:
@@ -137,50 +145,63 @@ class Jarvis:
         day = self.today()
         rows = self.state.usage_on(day)
         if not rows:
-            lines = [f"Heute ({day}) noch kein Verbrauch."]
+            lines = [f"No usage yet today ({day})."]
         else:
-            lines = [f"Verbrauch heute ({day}):"]
-            lines += [f"- {p}: {i:,} Eingabe- und {o:,} Ausgabe-Tokens".replace(",", ".")
-                      for p, i, o in rows]
+            lines = [f"Usage today ({day}):"]
+            lines += [f"- {p}: {i:,} input and {o:,} output tokens" for p, i, o in rows]
         if self.daily_token_budget > 0:
             used = self.state.tokens_on(day, self.brain.provider)
-            lines.append(f"Tagesbudget Claude: {used:,} von {self.daily_token_budget:,} Tokens"
-                         .replace(",", "."))
+            lines.append(f"Daily budget for Claude: {used:,} of {self.daily_token_budget:,} tokens")
         return "\n".join(lines)
 
-    # ---------- Nachrichten ----------
+    # ---------- Messages ----------
 
     async def handle(self, user: User, text: str, channel: str, voice: bool = False) -> Reply:
-        """voice=True: Antwort wird vorgelesen (kurz, ohne Formatierung, schnelles Modell)."""
+        """voice=True: the answer is read aloud (short, no formatting, fast model)."""
         private = self.state.is_private(user.id)
+        protected = False
         if self.router is not None:
-            self.router.observe(user.id, channel, text, private)
-        # Wiedereinstieg nur für Erwachsene und nur per Text: Sprache bleibt kurz und zählt
-        # nicht als Rückkehr, sonst ginge der Hinweis beim ersten Alexa-Satz verloren.
+            if self.protect and not private:
+                decision = await self.router.decide(user.id, channel, text, private)
+                # Could not classify: treat it as sensitive (when in doubt, local).
+                protected = decision is None or decision.sensitive
+            else:
+                self.router.observe(user.id, channel, text, private)
+        # Re-entry only for adults and only by text: voice stays short and does not count as
+        # a return, otherwise the hint would be used up by the first Alexa sentence.
         note = ""
         if not voice and user.role in ADULTS:
             note = self._reentry_note(user)
             self.state.touch(user.id)
         if private:
-            return await self._handle_private(user, text, channel)
+            answer, _ = await self._answer_locally(
+                user, text, f"{channel} · private",
+                unavailable="Private mode is not set up yet (no local model). "
+                            "Switch private mode off to go back to Claude.")
+            return Reply(answer)
 
-        # Eine neue Nachricht verwirft eine offene Bestätigungsfrage.
+        # A new message discards an open confirmation question.
         self.state.clear_pending(user.id)
+        if protected:
+            answer, ok = await self._answer_locally(
+                user, text, f"{channel} · protected",
+                unavailable="This looks like a sensitive topic, so it stays away from cloud "
+                            "models, but no local model is set up yet.")
+            return Reply(answer + PROTECT_NOTE if ok else answer)
         if self._over_budget(self.brain.provider):
             return await self._handle_fallback(
-                user, text, channel,
-                "Das Tagesbudget für Claude ist aufgebraucht. Morgen geht es weiter.")
+                user, text, channel, "The daily budget for Claude is used up. It resets tomorrow.")
         brain = self.voice_brain if voice else self.brain
         try:
             result = await brain.respond(self._history(user), text, user, voice=voice, note=note)
         except Exception:
-            log.exception("Fehler bei Claude")
+            log.exception("Error with Claude")
             return await self._handle_fallback(
-                user, text, channel, "Da ist etwas schiefgegangen. Versuch es gleich noch einmal.")
+                user, text, channel, "Something went wrong. Please try again in a moment.")
         return self._deliver(user, text, channel, result, brain)
 
     def take_pending(self, user: User, token: str) -> PendingEntry | None:
-        """Gibt die offene Aktion zurück (und entfernt sie), oder None, wenn abgelaufen."""
+        """Returns the pending action (and removes it), or None if it has expired."""
         entry = self.state.pop_pending(user.id, token)
         return PendingEntry(*entry) if entry else None
 
@@ -188,8 +209,8 @@ class Jarvis:
         try:
             result = await self.brain.resume(entry.action, approved, user)
         except Exception:
-            log.exception("Fehler nach Bestätigung")
-            return Reply("Da ist etwas schiefgegangen.")
+            log.exception("Error after confirmation")
+            return Reply("Something went wrong.")
         return self._deliver(user, entry.action.user_text, entry.channel, result, self.brain)
 
     def _deliver(self, user: User, user_text: str, channel: str, result: BrainResult,
@@ -213,7 +234,7 @@ class Jarvis:
         try:
             reply = await self.fallback.complete(system, self._history(user), text)
         except Exception:
-            log.exception("Fehler beim Ausweichmodell")
+            log.exception("Error with the fallback model")
             return Reply(error_text)
         self.record_usage(user.id, self.fallback.name, self.fallback.model,
                           reply.input_tokens, reply.output_tokens)
@@ -221,19 +242,25 @@ class Jarvis:
         self.journals.for_user(user).log_exchange(f"{channel} · {self.fallback.name}", text, reply.text)
         return Reply(reply.text + FALLBACK_NOTE)
 
-    async def _handle_private(self, user: User, text: str, channel: str) -> Reply:
-        # Kein Ausweichen auf Cloud-Modelle: lieber keine Antwort als ein Datenleck.
+    async def _answer_locally(self, user: User, text: str, channel: str,
+                              unavailable: str) -> tuple[str, bool]:
+        """Private mode and protected messages: local model, private memory and journal.
+        Returns the text and whether the local model answered.
+
+        Never falls back to a cloud model: better no answer than a leak. Guests get no
+        history and leave none, like with Claude."""
         if self.local_llm is None:
-            return Reply("Der Privatmodus ist noch nicht eingerichtet (LOCAL_LLM_URL fehlt). "
-                         "Mit /privat schaltest du zurück zu Claude.")
+            return unavailable, False
         system = PRIVATE_SYSTEM.format(persona=self.brain.persona, user=user.name,
                                        language=user.language)
+        guest = user.role is Role.GUEST
+        history = [] if guest else self.private_memory.history(user.id)
         try:
-            reply = await self.local_llm.complete(system, self.private_memory.history(user.id), text)
+            reply = await self.local_llm.complete(system, history, text)
         except Exception:
-            log.exception("Fehler beim lokalen Modell")
-            return Reply("Das lokale Modell ist gerade nicht erreichbar. "
-                         "Ist der DGX Spark an und der Tunnel aktiv?")
-        self.private_memory.add_exchange(user.id, text, reply.text)
-        self.private_journals.for_user(user).log_exchange(f"{channel} · privat", text, reply.text)
-        return Reply(reply.text)
+            log.exception("Error with the local model")
+            return "The local model cannot be reached right now. Please try again later.", False
+        if not guest:
+            self.private_memory.add_exchange(user.id, text, reply.text)
+        self.private_journals.for_user(user).log_exchange(channel, text, reply.text)
+        return reply.text, True
