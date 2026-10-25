@@ -1,8 +1,8 @@
-"""jarvis-core: der gemeinsame Kern von Jarvis Home und Jarvis Job.
+"""jarvis-core: the shared core of Jarvis Home and Jarvis Job.
 
-Werkzeugschleife mit Claude, Rollen und Bestätigungen, Privatmodus, Router,
-Skills und Chief of Staff. Zugänge (Telegram, Alexa, Slack …) und konkrete
-Anbindungen leben in den Profil-Repos.
+Tool loop with Claude, roles and confirmations, private mode and protect mode, local router,
+skills and chief of staff. Channels (Telegram, Alexa, Slack …) and concrete integrations
+live in the profile repos.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

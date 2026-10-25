@@ -1,17 +1,21 @@
-"""Router im Beobachtungsmodus.
+"""Local router: observes every message, and decides in protect mode.
 
-Entscheidet für jede Nachricht, ohne einzugreifen:
-- sensibel?  (Gesundheit, Finanzen, Beziehung, Recht, Zugangsdaten …) → später lokal
-- Absicht    (einkauf, erinnerung, muell, …)                          → später Schnellpfad
-- Aufwand    (einfach / mittel / komplex)                              → später kleineres Modell
+For each message it decides:
+- sensitive?  (health, money, relationships, legal, credentials …) → local model in protect mode
+- intent      (shopping, reminder, waste, …)                       → later a fast path
+- complexity  (simple / medium / complex)                          → later a smaller model
 
-Alles läuft lokal auf dem Server: Schlüsselwort-Regeln plus ein kleines mehrsprachiges
-Embedding-Modell (ONNX über fastembed, kein PyTorch) mit nächsten Nachbarn auf
-Beispielsätzen. Die Entscheidungen landen in data/router.sqlite und lassen sich mit
-/router auswerten, mit „/router ja|nein“ korrigieren und als CSV exportieren:
+Without protect mode it only observes (`RouterObserver.observe`, in the background). With
+protect mode (`Jarvis(protect=True)`) the core waits for `RouterObserver.decide` and keeps a
+sensitive message, or one the router cannot classify, away from cloud models.
 
-    python -m jarvis.router test "Ich habe Rückenschmerzen"
-    python -m jarvis.router export /data/router.sqlite router.csv [--mit-privat]
+Everything runs locally on the server: keyword rules plus a small multilingual embedding
+model (ONNX via fastembed, no PyTorch) with nearest neighbours on example sentences. The
+decisions go to data/router.sqlite; a profile can show them (`RouterLog.stats`), correct them
+(`RouterLog.label_last`) and export them as CSV:
+
+    python -m jarvis_core.router test "I have had back pain for a week"
+    python -m jarvis_core.router export /data/router.sqlite router.csv [--with-private]
 """
 
 import asyncio
@@ -39,47 +43,54 @@ log = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
-# Treffer hier zählen immer als sensibel – unabhängig vom Modell.
-# "stamm": darf in zusammengesetzten Wörtern stehen (Rücken-schmerzen, Haus-arzt, Konto-auszug).
-# "wort": nur als ganzes Wort, weil kurz oder mehrdeutig (PIN ≠ Pinguin, Steuer ≠ Heizungssteuerung).
+# Hits here always count as sensitive, whatever the model says. German and English.
+# "stem": may sit inside compound words (Rücken-schmerzen, Haus-arzt, Konto-auszug).
+# "word": only as a whole word, because short or ambiguous (PIN ≠ Pinguin, Steuer ≠ Heizungssteuerung).
 SENSITIVE_RULES = {
-    "gesundheit": {
-        "stamm": ["arzt", "ärzt", "diagnose", "krank", "schmerz", "therapi", "therapeut",
-                  "medikament", "tablette", "depress", "psych", "blutzucker", "blutdruck",
-                  "schwanger", "krebs", "demenz", "klinik", "krankenhaus", "operation", "symptom"],
-        "wort": [],
+    "health": {
+        "stem": ["arzt", "ärzt", "diagnose", "krank", "schmerz", "therapi", "therapeut",
+                 "medikament", "tablette", "depress", "psych", "blutzucker", "blutdruck",
+                 "schwanger", "krebs", "demenz", "klinik", "krankenhaus", "operation", "symptom",
+                 "doctor", "diagnos", "illness", "medication", "pregnan", "cancer", "dementia",
+                 "hospital", "surgery", "blood pressure", "blood sugar"],
+        "word": ["sick", "pain", "ill"],
     },
-    "finanzen": {
-        "stamm": ["gehalt", "konto", "schulden", "kredit", "überweisung", "insolvenz",
-                  "pfändung", "steuererklärung", "steuerbescheid", "steuerberat", "nachzahlung"],
-        "wort": ["iban", "mahnung", "steuer", "steuern"],
+    "finance": {
+        "stem": ["gehalt", "konto", "schulden", "kredit", "überweisung", "insolvenz",
+                 "pfändung", "steuererklärung", "steuerbescheid", "steuerberat", "nachzahlung",
+                 "salary", "debt", "bankrupt", "tax return"],
+        "word": ["iban", "mahnung", "steuer", "steuern", "loan", "overdraft"],
     },
-    "zugangsdaten": {
-        "stamm": ["passwort", "kennwort", "zugangsdaten"],
-        "wort": ["pin", "tan", "login"],
+    "credentials": {
+        "stem": ["passwort", "kennwort", "zugangsdaten", "password", "passcode"],
+        "word": ["pin", "tan", "login"],
     },
-    "beziehung": {
-        "stamm": ["trennung", "scheidung", "affäre", "seitensprung"],
-        "wort": ["trennen", "streit", "streiten", "gestritten"],
+    "relationship": {
+        "stem": ["trennung", "scheidung", "affäre", "seitensprung", "divorce"],
+        "word": ["trennen", "streit", "streiten", "gestritten", "affair", "breakup"],
     },
-    "recht": {
-        "stamm": ["anwalt", "anwält", "gericht", "abmahnung", "jugendamt", "kündigung"],
-        "wort": ["polizei", "anzeige"],
+    "legal": {
+        "stem": ["anwalt", "anwält", "gericht", "abmahnung", "jugendamt", "kündigung",
+                 "lawyer", "lawsuit", "dismissal"],
+        "word": ["polizei", "anzeige", "police", "court"],
     },
 }
 
 
 def _compile_rule(rule: dict) -> re.Pattern:
-    parts = [rf"\w*{re.escape(s)}\w*" for s in rule["stamm"]]
-    parts += [rf"\b{re.escape(w)}\b" for w in rule["wort"]]
+    parts = [rf"\w*{re.escape(s)}\w*" for s in rule["stem"]]
+    parts += [rf"\b{re.escape(w)}\b" for w in rule["word"]]
     return re.compile("|".join(parts), re.IGNORECASE)
 
 
 _RULES = {name: _compile_rule(rule) for name, rule in SENSITIVE_RULES.items()}
 
-FAST_INTENTS = {"einkauf", "erinnerung", "muell", "zeit", "smalltalk", "haus"}
+OTHER = "other"
+FAST_INTENTS = {"shopping", "reminder", "waste", "time", "smalltalk", "home"}
 _COMPLEX_HINT = re.compile(r"\b(erklär\w*|vergleich\w*|plane?n?|analysier\w*|schreib\w* (mir )?"
-                           r"(einen|eine|ein)|zusammenfass\w*|warum|begründ\w*)\b", re.IGNORECASE)
+                           r"(einen|eine|ein)|zusammenfass\w*|warum|begründ\w*"
+                           r"|explain\w*|compar\w*|planning|analy[sz]\w*|write me an?"
+                           r"|summar\w*|why|justify)\b", re.IGNORECASE)
 
 
 # ---------- Embeddings ----------
@@ -91,7 +102,7 @@ class Embedder(Protocol):
 
 
 class HashEmbedder:
-    """Zeichen-3-Gramme, gehasht. Braucht keinen Download – Rückfall und für Tests."""
+    """Hashed character 3-grams. Needs no download: the fallback, and for tests."""
 
     name = "hash-3gram"
 
@@ -108,7 +119,7 @@ class HashEmbedder:
 
 
 class FastEmbedder:
-    """Mehrsprachiges Satz-Embedding über fastembed (ONNX). Lädt das Modell beim ersten Aufruf."""
+    """Multilingual sentence embedding via fastembed (ONNX). Loads the model on first use."""
 
     def __init__(self, model: str = DEFAULT_MODEL, cache_dir: str | None = None):
         self.name = model
@@ -117,7 +128,7 @@ class FastEmbedder:
 
     def embed(self, texts: list[str]) -> np.ndarray:
         if self._model is None:
-            from fastembed import TextEmbedding  # erst bei Bedarf laden
+            from fastembed import TextEmbedding  # load only when needed
             self._model = TextEmbedding(self.name, cache_dir=self.cache_dir)
         return np.array(list(self._model.embed(texts)), dtype=np.float32)
 
@@ -127,16 +138,16 @@ def _normalize(m: np.ndarray) -> np.ndarray:
     return m / np.where(norms == 0, 1, norms)
 
 
-# ---------- Entscheidung ----------
+# ---------- Decision ----------
 
 @dataclass
 class Decision:
     sensitive: bool
-    sensitive_score: float          # 0..1 aus dem Modell
-    reasons: list[str] = field(default_factory=list)  # getroffene Regeln
-    intent: str = "sonstiges"
+    sensitive_score: float          # 0..1 from the model
+    reasons: list[str] = field(default_factory=list)  # rules that matched
+    intent: str = OTHER
     intent_score: float = 0.0
-    complexity: str = "mittel"
+    complexity: str = "medium"
     embedder: str = ""
     latency_ms: float = 0.0
 
@@ -149,7 +160,7 @@ class Router:
         self.threshold = threshold
         self.k = k
         self._seeds: dict | None = None
-        # Vorladen beim Start und erste Nachricht laufen in verschiedenen Threads.
+        # Preloading at start-up and the first message run in different threads.
         self._lock = threading.Lock()
 
     def _prepare(self) -> None:
@@ -159,7 +170,7 @@ class Router:
             try:
                 self._seeds = self._embed_seeds(self.embedder)
             except Exception:
-                log.warning("Router: Embedding-Modell %s nicht ladbar, nutze %s",
+                log.warning("Router: cannot load embedding model %s, using %s",
                             getattr(self.embedder, "name", "?"), self.fallback.name, exc_info=True)
                 self.embedder = self.fallback
                 self._seeds = self._embed_seeds(self.embedder)
@@ -183,22 +194,22 @@ class Router:
             return float(np.mean(sims[: self.k]))
 
         s, n = top_k(self._seeds["sensitive"]), top_k(self._seeds["normal"])
-        # Abstand der Ähnlichkeiten in eine Wahrscheinlichkeit übersetzen (Temperatur 0,05).
+        # Turn the gap between the similarities into a probability (temperature 0.05).
         score = float(1.0 / (1.0 + np.exp(-(s - n) / 0.05)))
         reasons = sorted(name for name, rx in _RULES.items() if rx.search(text))
 
         intent_scores = {name: float(np.max(m @ vec)) for name, m in self._seeds["intents"].items()}
         intent, intent_score = max(intent_scores.items(), key=lambda kv: kv[1])
         if intent_score < 0.35:
-            intent = "sonstiges"
+            intent = OTHER
 
         words = len(text.split())
         if intent in FAST_INTENTS and words <= 15:
-            complexity = "einfach"
+            complexity = "simple"
         elif words > 30 or _COMPLEX_HINT.search(text):
-            complexity = "komplex"
+            complexity = "complex"
         else:
-            complexity = "mittel"
+            complexity = "medium"
 
         return Decision(
             sensitive=bool(reasons) or score >= self.threshold,
@@ -212,7 +223,7 @@ class Router:
         )
 
 
-# ---------- Protokoll ----------
+# ---------- Log ----------
 
 class RouterLog:
     def __init__(self, path: Path):
@@ -226,9 +237,9 @@ class RouterLog:
             " sensitive INTEGER NOT NULL, sensitive_score REAL NOT NULL, reasons TEXT NOT NULL,"
             " intent TEXT NOT NULL, intent_score REAL NOT NULL, complexity TEXT NOT NULL,"
             " embedder TEXT NOT NULL, latency_ms REAL NOT NULL,"
-            " label INTEGER)"  # 1 = sensibel, 0 = unkritisch (von Hand korrigiert)
+            " label INTEGER)"  # 1 = sensitive, 0 = harmless (corrected by hand)
         )
-        # Antworten eines zweiten Entscheiders im Schattenbetrieb (z. B. Laya über ollaya).
+        # Answers of a second decider running in shadow (e.g. Laya via ollaya).
         self._db.execute(
             "CREATE TABLE IF NOT EXISTS shadow ("
             " id INTEGER PRIMARY KEY AUTOINCREMENT, decision_id INTEGER NOT NULL,"
@@ -263,7 +274,7 @@ class RouterLog:
         return cur.lastrowid
 
     def label_last(self, user_id: str, sensitive: bool) -> str | None:
-        """Setzt das Label der letzten Nachricht der Person. Gibt deren Text zurück."""
+        """Sets the label of the person's last message. Returns its text."""
         row = self._db.execute(
             "SELECT id, text FROM decisions WHERE user_id = ? ORDER BY id DESC LIMIT 1", (user_id,)
         ).fetchone()
@@ -278,37 +289,37 @@ class RouterLog:
         q = lambda sql, *p: self._db.execute(sql, (since, *p)).fetchone()  # noqa: E731
         total = q("SELECT COUNT(*) FROM decisions WHERE ts >= ?")[0]
         if not total:
-            return f"Router: in den letzten {days} Tagen noch keine Nachrichten beobachtet."
+            return f"Router: no messages observed in the last {days} days."
         sens = q("SELECT COUNT(*) FROM decisions WHERE ts >= ? AND sensitive = 1")[0]
         rules = q("SELECT COUNT(*) FROM decisions WHERE ts >= ? AND reasons != '[]'")[0]
         priv, priv_hit = q("SELECT COUNT(*), COALESCE(SUM(sensitive), 0) FROM decisions"
                            " WHERE ts >= ? AND private = 1")
         lat = q("SELECT AVG(latency_ms) FROM decisions WHERE ts >= ?")[0]
         lines = [
-            f"Router (Beobachtung, letzte {days} Tage): {total} Nachrichten",
-            f"- als sensibel eingestuft: {sens} ({sens / total:.0%}), davon per Regel: {rules}",
+            f"Router (last {days} days): {total} messages",
+            f"- classed as sensitive: {sens} ({sens / total:.0%}), of which by rule: {rules}",
         ]
         if priv:
-            lines.append(f"- im Privatmodus gesendet: {priv}, davon erkannt: {priv_hit} ({priv_hit / priv:.0%})")
+            lines.append(f"- sent in private mode: {priv}, of which detected: {priv_hit} ({priv_hit / priv:.0%})")
 
         tp, fp, fn, tn = (q("SELECT COUNT(*) FROM decisions WHERE ts >= ? AND label = ? AND sensitive = ?",
                             lab, pred)[0] for lab, pred in ((1, 1), (0, 1), (1, 0), (0, 0)))
         if tp + fp + fn + tn:
             precision = tp / (tp + fp) if tp + fp else 0.0
             recall = tp / (tp + fn) if tp + fn else 0.0
-            lines.append(f"- korrigierte Labels: {tp + fp + fn + tn} · Präzision {precision:.0%} · "
-                         f"Recall {recall:.0%} · übersehen: {fn}")
+            lines.append(f"- corrected labels: {tp + fp + fn + tn} · precision {precision:.0%} · "
+                         f"recall {recall:.0%} · missed: {fn}")
 
         intents = self._db.execute(
             "SELECT intent, COUNT(*) FROM decisions WHERE ts >= ? GROUP BY intent ORDER BY 2 DESC",
             (since,)).fetchall()
-        lines.append("- Absichten: " + ", ".join(f"{i} {c}" for i, c in intents))
+        lines.append("- intents: " + ", ".join(f"{i} {c}" for i, c in intents))
         comp = self._db.execute(
             "SELECT complexity, COUNT(*) FROM decisions WHERE ts >= ? GROUP BY complexity ORDER BY 2 DESC",
             (since,)).fetchall()
-        lines.append("- Aufwand: " + ", ".join(f"{k} {c}" for k, c in comp))
+        lines.append("- complexity: " + ", ".join(f"{k} {c}" for k, c in comp))
         emb = self._db.execute("SELECT embedder FROM decisions ORDER BY id DESC LIMIT 1").fetchone()[0]
-        lines.append(f"- Modell: {emb}, im Schnitt {lat:.0f} ms")
+        lines.append(f"- model: {emb}, {lat:.0f} ms on average")
         lines += self._shadow_stats(since)
         return "\n".join(lines)
 
@@ -322,19 +333,19 @@ class RouterLog:
             return []
         ok = [r for r in rows if r[6] is None]
         model = rows[-1][0]
-        out = [f"Schatten-Entscheider {model}{' (Cloud)' if rows[-1][1] else ''}: "
-               f"{len(rows)} Anfragen, {len(rows) - len(ok)} Fehler"]
+        out = [f"Shadow decider {model}{' (cloud)' if rows[-1][1] else ''}: "
+               f"{len(rows)} requests, {len(rows) - len(ok)} errors"]
         if not ok:
             return out
         lat = sum(r[5] or 0 for r in ok) / len(ok)
         sens = [r for r in ok if r[2] is not None]
         if sens:
             agree = sum((r[2] >= 0.5) == bool(r[7]) for r in sens) / len(sens)
-            out.append(f"- „sensibel?“ gleich wie lokal: {agree:.0%}")
+            out.append(f"- \"sensitive?\" same as local: {agree:.0%}")
             priv = [r for r in sens if r[8]]
             if priv:
                 hit = sum(r[2] >= 0.5 for r in priv)
-                out.append(f"- im Privatmodus gesendet: {len(priv)}, davon erkannt: {hit} ({hit / len(priv):.0%})")
+                out.append(f"- sent in private mode: {len(priv)}, of which detected: {hit} ({hit / len(priv):.0%})")
             labeled = [r for r in sens if r[9] is not None]
             if labeled:
                 tp = sum(r[9] == 1 and r[2] >= 0.5 for r in labeled)
@@ -342,14 +353,14 @@ class RouterLog:
                 fn = sum(r[9] == 1 and r[2] < 0.5 for r in labeled)
                 precision = tp / (tp + fp) if tp + fp else 0.0
                 recall = tp / (tp + fn) if tp + fn else 0.0
-                out.append(f"- auf korrigierten Labels: Präzision {precision:.0%} · Recall {recall:.0%} · übersehen: {fn}")
+                out.append(f"- on corrected labels: precision {precision:.0%} · recall {recall:.0%} · missed: {fn}")
         intent_agree = sum(r[3] == r[10] for r in ok) / len(ok)
         comp_agree = sum(r[4] == r[11] for r in ok) / len(ok)
-        out.append(f"- Absicht gleich: {intent_agree:.0%} · Aufwand gleich: {comp_agree:.0%} · im Schnitt {lat:.0f} ms")
+        out.append(f"- same intent: {intent_agree:.0%} · same complexity: {comp_agree:.0%} · {lat:.0f} ms on average")
         return out
 
     def export_csv(self, path: Path, include_private: bool = False) -> int:
-        # Pro Nachricht die jüngste Schatten-Antwort dazu (falls vorhanden).
+        # Per message the newest shadow answer (if any).
         rows = self._db.execute(
             "SELECT d.ts, d.user_id, d.channel, d.text, d.private, d.sensitive, d.sensitive_score,"
             " d.reasons, d.intent, d.intent_score, d.complexity, d.embedder, d.latency_ms, d.label,"
@@ -367,16 +378,17 @@ class RouterLog:
             writer.writerow(cols)
             for r in rows:
                 if r[4] and not include_private:
-                    r = (*r[:3], "", *r[4:])  # Text privater Nachrichten weglassen
+                    r = (*r[:3], "", *r[4:])  # leave out the text of private messages
                 writer.writerow(r)
                 count += 1
         return count
 
 
-# ---------- Beobachter ----------
+# ---------- Observer ----------
 
 class RouterObserver:
-    """Klassifiziert im Hintergrund und protokolliert. Greift nie in die Antwort ein."""
+    """Classifies and logs. `observe` runs in the background and never changes the answer;
+    `decide` waits for the decision (protect mode)."""
 
     def __init__(self, router: Router, log_store: RouterLog, shadow: "ShadowDecider | None" = None):
         self.router = router
@@ -385,66 +397,88 @@ class RouterObserver:
         self._tasks: set[asyncio.Task] = set()
 
     def observe(self, user_id: str, channel: str, text: str, private: bool) -> None:
+        self._spawn(self._observe(user_id, channel, text, private))
+
+    async def decide(self, user_id: str, channel: str, text: str, private: bool) -> Decision | None:
+        """Classifies and logs before the answer; None if the router failed (protect mode
+        then treats the message as sensitive). The shadow decider runs in the background."""
+        found = await self._classify(user_id, channel, text, private)
+        if found is None:
+            return None
+        if self.shadow is not None:
+            self._spawn(self._shadow(found[1], text, private, found[0]))
+        return found[0]
+
+    def _spawn(self, coro) -> None:
         try:
-            task = asyncio.get_running_loop().create_task(
-                self._observe(user_id, channel, text, private))
+            task = asyncio.get_running_loop().create_task(coro)
         except RuntimeError:
+            coro.close()
             return
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
-    async def _observe(self, user_id: str, channel: str, text: str, private: bool) -> Decision | None:
+    async def _classify(self, user_id: str, channel: str, text: str,
+                        private: bool) -> tuple[Decision, int] | None:
         try:
             decision = await asyncio.to_thread(self.router.classify, text)
-            decision_id = self.log.add(user_id, channel, text, private, decision)
-            if self.shadow is not None:
-                await self.shadow.observe(self.log, decision_id, text, private, decision)
-            return decision
+            return decision, self.log.add(user_id, channel, text, private, decision)
         except Exception:
-            log.warning("Router-Beobachtung fehlgeschlagen", exc_info=True)
+            log.warning("Router classification failed", exc_info=True)
             return None
 
+    async def _shadow(self, decision_id: int, text: str, private: bool, decision: Decision) -> None:
+        try:
+            await self.shadow.observe(self.log, decision_id, text, private, decision)
+        except Exception:
+            log.warning("Shadow decider failed", exc_info=True)
+
+    async def _observe(self, user_id: str, channel: str, text: str, private: bool) -> None:
+        found = await self._classify(user_id, channel, text, private)
+        if found is not None and self.shadow is not None:
+            await self._shadow(found[1], text, private, found[0])
+
     async def drain(self) -> None:
-        """Wartet auf laufende Beobachtungen (für Tests und beim Herunterfahren)."""
+        """Waits for running observations (for tests and at shutdown)."""
         if self._tasks:
             await asyncio.gather(*list(self._tasks), return_exceptions=True)
 
 
-# ---------- Schatten-Entscheider (System-One-Schnittstelle) ----------
+# ---------- Shadow decider (System One interface) ----------
 
 INTENT_CRITERIA = {
-    "einkauf": "Shopping list: add, show or check off items",
-    "erinnerung": "Reminders: create, list or delete a reminder",
-    "muell": "Waste collection: pickup dates and which bin goes out",
-    "zeit": "Current time or date",
-    "websuche": "Current information from the web: opening hours, news, transport, weather, prices",
-    "haus": "Control the house: lights, heating, doors, alarm",
+    "shopping": "Shopping list: add, show or check off items",
+    "reminder": "Reminders: create, list or delete a reminder",
+    "waste": "Waste collection: pickup dates and which bin goes out",
+    "time": "Current time or date",
+    "web_search": "Current information from the web: opening hours, news, transport, weather, prices",
+    "home": "Control the house: lights, heating, doors, alarm",
     "smalltalk": "Greetings, thanks, jokes, chit-chat",
-    "wissen": "General knowledge, explanations, homework help, advice",
-    "sonstiges": "Anything else",
+    "knowledge": "General knowledge, explanations, homework help, advice",
+    OTHER: "Anything else",
 }
-COMPLEXITY_LEVELS = ["einfach", "mittel", "komplex"]
-# Anweisungen auf Englisch: darauf sind die Entscheidungsmodelle trainiert; der Text darf deutsch sein.
+COMPLEXITY_LEVELS = ["simple", "medium", "complex"]
+# Instructions in English: the decision models are trained on it; the message may be in any language.
 QUESTIONS = {
-    "sensibel": Noul(
+    "sensitive": Noul(
         "Is this message about a sensitive private topic, such as physical or mental health, "
         "money, debts or salary, relationships or family conflicts, legal trouble, "
         "or passwords and other credentials?"),
-    "absicht": Choice("What does the person want?", INTENT_CRITERIA),
-    "aufwand": Score(
+    "intent": Choice("What does the person want?", INTENT_CRITERIA),
+    "effort": Score(
         "How much effort does a good answer need?",
         ["simple: one quick fact or action",
          "medium: a short answer with some thought",
          "complex: an explanation, plan, comparison or several steps"]),
 }
 
-# Tailscale vergibt Adressen aus 100.64.0.0/10.
+# Tailscale hands out addresses from 100.64.0.0/10.
 _TAILSCALE = ipaddress.ip_network("100.64.0.0/10")
 
 
 def is_local_url(url: str) -> bool:
-    """Lokal = localhost, private Netze, Tailscale oder Docker-Dienstname ohne Punkt.
-    Alles andere gilt als Cloud – im Zweifel also die strengere Behandlung."""
+    """Local = localhost, private networks, Tailscale or a Docker service name without a dot.
+    Everything else counts as cloud, so in doubt the stricter handling applies."""
     host = (urlsplit(url).hostname or "").lower()
     if not host:
         return False
@@ -460,10 +494,10 @@ def is_local_url(url: str) -> bool:
 
 
 class ShadowDecider:
-    """Fragt einen zweiten Entscheider und protokolliert seine Antworten neben der eigenen.
+    """Asks a second decider and logs its answers next to the router's own.
 
-    Läuft er in der Cloud (z. B. TypeSafe Jev), bekommt er weder Privatmodus-Nachrichten
-    noch solche, die lokal als sensibel gelten, und wird nie nach „sensibel?“ gefragt.
+    If it runs in the cloud (e.g. TypeSafe Jev), it gets neither private-mode messages nor
+    those the router finds sensitive, and it is never asked "sensitive?".
     """
 
     def __init__(self, client: SystemOneClient, cloud: bool | None = None):
@@ -476,26 +510,25 @@ class ShadowDecider:
         if self.cloud:
             if private or local.sensitive:
                 return
-            del questions["sensibel"]
+            del questions["sensitive"]
         try:
             result = await self.client.decide(text, questions)
         except Exception as exc:
-            log.warning("Schatten-Entscheider fehlgeschlagen: %s", exc)
+            log.warning("Shadow decider failed: %s", exc)
             log_store.add_shadow(decision_id, self.client.model, self.cloud, None, None, None,
                                  None, None, error=f"{type(exc).__name__}: {exc}"[:300])
             return
         a = result.answers
-        sens = a.get("sensibel")
-        intent = a.get("absicht")
-        effort = a.get("aufwand")
+        sens = a.get("sensitive")
+        intent = a.get("intent")
+        effort = a.get("effort")
         complexity = None
         if effort is not None and effort.probabilities:
             level = str(max(effort.probabilities.items(), key=lambda kv: kv[1])[0])
-            if level.isdigit():  # Server ohne Stufennamen: Index 0..2
+            if level.isdigit():  # server without level names: index 0..2
                 complexity = COMPLEXITY_LEVELS[min(2, int(level))]
             else:
-                prefixes = {"simple": "einfach", "medium": "mittel", "complex": "komplex"}
-                complexity = next((v for k, v in prefixes.items() if level.lower().startswith(k)), None)
+                complexity = next((c for c in COMPLEXITY_LEVELS if level.lower().startswith(c)), None)
         elif effort is not None and effort.value is not None:
             complexity = COMPLEXITY_LEVELS[max(0, min(2, round(float(effort.value))))]
         log_store.add_shadow(
@@ -508,7 +541,7 @@ class ShadowDecider:
         )
 
 
-# ---------- Kommandozeile ----------
+# ---------- Command line ----------
 
 def _main(argv: list[str]) -> int:
     if len(argv) >= 2 and argv[0] == "test":
@@ -516,8 +549,8 @@ def _main(argv: list[str]) -> int:
         print(json.dumps(asdict(router.classify(" ".join(argv[1:]))), ensure_ascii=False, indent=2))
         return 0
     if len(argv) >= 3 and argv[0] == "export":
-        n = RouterLog(Path(argv[1])).export_csv(Path(argv[2]), include_private="--mit-privat" in argv)
-        print(f"{n} Zeilen nach {argv[2]} geschrieben")
+        n = RouterLog(Path(argv[1])).export_csv(Path(argv[2]), include_private="--with-private" in argv)
+        print(f"{n} rows written to {argv[2]}")
         return 0
     print(__doc__)
     return 1

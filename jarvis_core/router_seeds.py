@@ -1,5 +1,5 @@
-"""Startbeispiele für den Router. Werden mit echten, gelabelten Nachrichten ersetzt
-bzw. ergänzt (siehe `python -m jarvis.router export`)."""
+"""Starting examples for the router, in German and English. Replace or extend them with
+real, labelled messages (see `python -m jarvis_core.router export`)."""
 
 SENSITIVE = [
     "Ich habe seit Tagen Brustschmerzen und mache mir Sorgen",
@@ -22,6 +22,14 @@ SENSITIVE = [
     "Ich habe eine Abmahnung bekommen",
     "Wie viel haben wir für die Steuer zurückgelegt",
     "Ich fühle mich einsam und überfordert",
+    "I have had chest pain for days and I'm worried",
+    "My salary is lower than my colleague's, what should I do",
+    "We are behind on the rent and in debt",
+    "I think my partner and I are going to split up",
+    "What is the password for the bank account",
+    "I got a letter from a lawyer about the dismissal",
+    "I'm not doing well mentally at the moment",
+    "My blood sugar was far too high again today",
 ]
 
 NORMAL = [
@@ -45,33 +53,41 @@ NORMAL = [
     "Gute Nacht Jarvis",
     "Wie weit ist es nach Berlin",
     "Erkläre mir den Unterschied zwischen Wetter und Klima",
+    "Put milk and eggs on the shopping list",
+    "What will the weather be like tomorrow",
+    "Remind me at eight about the meeting",
+    "What time is it",
+    "Tell me a joke",
+    "When does the next train to Cologne leave",
+    "How does a rainbow work",
+    "Good night Jarvis",
 ]
 
 INTENTS = {
-    "einkauf": [
+    "shopping": [
         "Schreib Milch auf die Liste", "Was steht auf der Einkaufsliste",
         "Wir brauchen noch Brot und Butter", "Eier habe ich gekauft",
         "Setz Kartoffeln auf die Einkaufsliste",
     ],
-    "erinnerung": [
+    "reminder": [
         "Erinnere mich morgen an den Zahnarzt", "Erinner mich in zwei Stunden an die Wäsche",
         "Welche Erinnerungen habe ich", "Lösche die Erinnerung",
         "Erinnere Mia am Freitag an den Turnbeutel",
     ],
-    "muell": [
+    "waste": [
         "Wann kommt die Biotonne", "Welche Tonne muss raus", "Wann wird Papier abgeholt",
         "Muss morgen der Restmüll raus", "Wann kommt die gelbe Tonne",
     ],
-    "zeit": [
+    "time": [
         "Wie spät ist es", "Welcher Tag ist heute", "Welches Datum haben wir",
         "Wie viel Uhr ist es gerade",
     ],
-    "websuche": [
+    "web_search": [
         "Hat das Hallenbad heute geöffnet", "Was gibt es Neues in Bonn",
         "Wann fährt die nächste Bahn nach Köln", "Wie wird das Wetter morgen",
         "Was kostet ein Ticket für den Zoo",
     ],
-    "haus": [
+    "home": [
         "Mach das Licht im Wohnzimmer aus", "Stell die Heizung auf 21 Grad",
         "Öffne die Haustür", "Ist das Garagentor zu", "Schalte den Alarm ein",
     ],
@@ -79,7 +95,7 @@ INTENTS = {
         "Erzähl mir einen Witz", "Gute Nacht Jarvis", "Wie geht es dir", "Danke dir",
         "Hallo Jarvis",
     ],
-    "wissen": [
+    "knowledge": [
         "Wie funktioniert ein Regenbogen", "Erkläre mir die Photosynthese",
         "Was ist die Hauptstadt von Australien", "Warum ist der Himmel blau",
         "Hilf mir bei den Mathe Hausaufgaben", "Vergleiche zwei Angebote für eine Waschmaschine",

@@ -1,0 +1,15 @@
+# People for Jarvis Job. Copy to data/people.toml.
+# Roles come from jarvis-core: admin (the person responsible for the project) and member
+# (colleagues; `member` is the same role as `adult`). child and guest are for home profiles.
+# slack: the member id from the Slack profile (⋮ → "Copy member ID"), starts with U.
+
+[[person]]
+id = "admin"
+name = "Admin"
+role = "admin"
+# slack = ["U0123456789"]
+
+# [[person]]
+# name = "Colleague"
+# role = "member"
+# slack = ["U0987654321"]

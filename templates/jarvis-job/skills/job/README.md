@@ -1,5 +1,6 @@
-# Skills für Jarvis Job
+# Skills for Jarvis Job
 
-Ein Ordner pro Skill mit Original-`SKILL.md` und `jarvis.toml` (Quelle mit Commit, Lizenz,
-Rollen). Eingebaute Skills des Kerns (`chief-of-staff`, `marketing-psychology`) sind schon da.
-Fremde Skills vor der Übernahme vollständig lesen, fest versionieren, Skripte nie ausführen.
+One folder per skill with the original `SKILL.md` and a `jarvis.toml` (source with commit,
+license, roles). The core's built-in skills (`chief-of-staff`, `marketing-psychology`) are
+already there. Read third-party skills in full before taking them over, pin their version,
+never run their scripts.

@@ -3,7 +3,7 @@ import json
 
 import httpx
 
-from jarvis_core.gemini import GEMINI_API, GeminiSearch
+from jarvis_core.gemini import GEMINI_API, NO_ANSWER, GeminiSearch
 from jarvis_core.llm import OpenAICompatibleChat
 
 
@@ -16,7 +16,7 @@ def test_search_returns_text_sources_and_usage():
         seen["body"] = json.loads(request.content)
         return httpx.Response(200, json={
             "candidates": [{
-                "content": {"parts": [{"text": "Das Hallenbad hat "}, {"text": "bis 21 Uhr offen."}]},
+                "content": {"parts": [{"text": "The pool is open "}, {"text": "until 9 pm."}]},
                 "groundingMetadata": {"groundingChunks": [
                     {"web": {"uri": "https://bonn.de/bad", "title": "bonn.de"}},
                     {"web": {"uri": "https://bonn.de/bad", "title": "bonn.de"}},
@@ -26,15 +26,17 @@ def test_search_returns_text_sources_and_usage():
         })
 
     usage = []
-    search = GeminiSearch("schluessel", "gemini-test",
+    search = GeminiSearch("key", "gemini-test", language="German",
                           on_usage=lambda *a: usage.append(a),
                           transport=httpx.MockTransport(handler))
-    out = asyncio.run(search.search("Hallenbad Beuel heute?", "oliver"))
+    out = asyncio.run(search.search("Is the pool open today?", "oliver"))
 
     assert seen["url"] == f"{GEMINI_API}/models/gemini-test:generateContent"
-    assert seen["key"] == "schluessel"
+    assert seen["key"] == "key"
+    assert "in German" in seen["body"]["systemInstruction"]["parts"][0]["text"]
     assert seen["body"]["tools"] == [{"google_search": {}}]
-    assert out.startswith("Das Hallenbad hat bis 21 Uhr offen.")
+    assert out.startswith("The pool is open until 9 pm.")
+    assert "Sources:" in out
     assert out.count("https://bonn.de/bad") == 1
     assert usage == [("oliver", "gemini", "gemini-test", 12, 8)]
 
@@ -42,7 +44,7 @@ def test_search_returns_text_sources_and_usage():
 def test_search_without_candidates():
     transport = httpx.MockTransport(lambda r: httpx.Response(200, json={}))
     out = asyncio.run(GeminiSearch("k", "m", transport=transport).search("?", "oliver"))
-    assert "keine Antwort" in out
+    assert out == NO_ANSWER
 
 
 def test_openai_compatible_chat_sends_system_history_and_key():
@@ -53,7 +55,7 @@ def test_openai_compatible_chat_sends_system_history_and_key():
         seen["auth"] = request.headers.get("authorization")
         seen["body"] = json.loads(request.content)
         return httpx.Response(200, json={
-            "choices": [{"message": {"content": " Antwort "}}],
+            "choices": [{"message": {"content": " Answer "}}],
             "usage": {"prompt_tokens": 7, "completion_tokens": 3},
         })
 
@@ -65,4 +67,4 @@ def test_openai_compatible_chat_sends_system_history_and_key():
     assert seen["url"] == "https://example.test/v1/chat/completions"
     assert seen["auth"] == "Bearer k"
     assert [m["content"] for m in seen["body"]["messages"]] == ["SYS", "a", "b"]
-    assert (reply.text, reply.input_tokens, reply.output_tokens) == ("Antwort", 7, 3)
+    assert (reply.text, reply.input_tokens, reply.output_tokens) == ("Answer", 7, 3)

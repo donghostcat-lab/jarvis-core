@@ -1,11 +1,11 @@
-"""Client für Entscheidungsmodelle mit der System-One-Schnittstelle (POST /v1/systemone).
+"""Client for decision models with the System One interface (POST /v1/systemone).
 
-Dieselbe Schnittstelle sprechen TypeSafe Jev (Cloud) und lokale Server wie ollaya
-(Laya, Decima, NLI, Kev …), Kev selbst oder laya-server. Welches Modell antwortet,
-entscheidet allein DECIDER_URL + DECIDER_MODEL.
+TypeSafe Jev (cloud) and local servers such as ollaya (Laya, Decima, NLI, Kev …),
+Kev itself or laya-server speak the same interface. Which model answers is decided
+by DECIDER_URL + DECIDER_MODEL alone.
 
-Anfrage:  {"state": "...", "model": "...", "questions": {name: {type, instructions, criteria}}}
-Antwort:  {"answers": {name: {"type": "noul", "noul": 0.93}
+Request:  {"state": "...", "model": "...", "questions": {name: {type, instructions, criteria}}}
+Response: {"answers": {name: {"type": "noul", "noul": 0.93}
                               | {"type": "choice", "choice": "x", "probabilities": {...}}
                               | {"type": "score", "score": 1.4, "probabilities": {...}}}}
 """
@@ -18,7 +18,7 @@ import httpx
 
 @dataclass(frozen=True)
 class Noul:
-    """Ja/Nein-Frage; Antwort ist die Wahrscheinlichkeit für „ja“."""
+    """Yes/no question; the answer is the probability of "yes"."""
     instructions: str
 
     def payload(self) -> dict:
@@ -28,7 +28,7 @@ class Noul:
 @dataclass(frozen=True)
 class Choice:
     instructions: str
-    criteria: dict[str, str]  # Option → Beschreibung
+    criteria: dict[str, str]  # option → description
 
     def payload(self) -> dict:
         return {"type": "choice", "instructions": self.instructions, "criteria": self.criteria}
@@ -37,7 +37,7 @@ class Choice:
 @dataclass(frozen=True)
 class Score:
     instructions: str
-    criteria: list[str]  # Stufen von niedrig nach hoch
+    criteria: list[str]  # levels from low to high
 
     def payload(self) -> dict:
         return {"type": "score", "instructions": self.instructions, "criteria": self.criteria}
@@ -46,7 +46,7 @@ class Score:
 @dataclass
 class Answer:
     kind: str
-    value: float | str | None = None       # noul: p(ja); choice: Option; score: Erwartungswert
+    value: float | str | None = None       # noul: p(yes); choice: option; score: expected value
     confidence: float | None = None
     probabilities: dict[str, float] = field(default_factory=dict)
 
@@ -65,7 +65,7 @@ class SystemOneClient:
         self.model = model
         self.api_key = api_key
         self.timeout = timeout
-        self._transport = transport  # für Tests
+        self._transport = transport  # for tests
 
     async def decide(self, state: str, questions: dict) -> DecisionResult:
         body = {"state": state, "model": self.model,
@@ -93,9 +93,9 @@ def _parse(raw: dict) -> Answer:
     if kind == "score":
         score = raw.get("score")
         legend = raw.get("legend") or {}
-        # Wahrscheinlichkeiten mit den Stufennamen statt Indizes zurückgeben.
+        # Return probabilities keyed by level name instead of index.
         named = {legend.get(k, k): v for k, v in probs.items()}
         conf = raw.get("confidence")
         return Answer("score", float(score) if score is not None else None,
                       float(conf) if conf is not None else None, named)
-    return Answer(kind or "unbekannt")
+    return Answer(kind or "unknown")

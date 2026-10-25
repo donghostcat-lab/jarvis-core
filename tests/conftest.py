@@ -1,4 +1,4 @@
-"""Gemeinsame Test-Helfer: Fake-Claude-Client und Beispielpersonen."""
+"""Shared test helpers: a fake Claude client and example people."""
 
 from types import SimpleNamespace
 
@@ -7,7 +7,7 @@ import pytest
 from jarvis_core.users import Role, User
 
 OLIVER = User("oliver", "Oliver", Role.ADMIN, telegram_ids=frozenset({1}))
-KIND = User("mia", "Mia", Role.KIND, telegram_ids=frozenset({2}))
+CHILD = User("mia", "Mia", Role.CHILD, telegram_ids=frozenset({2}))
 
 
 def text_block(text):
@@ -28,7 +28,7 @@ def usage(inp, out):
 
 
 class FakeClient:
-    """Spielt eine feste Folge von Claude-Antworten ab und merkt sich die Anfragen."""
+    """Plays back a fixed sequence of Claude responses and records the requests."""
 
     def __init__(self, responses):
         self.responses = list(responses)
@@ -49,5 +49,5 @@ def oliver():
 
 
 @pytest.fixture
-def kind():
-    return KIND
+def child():
+    return CHILD

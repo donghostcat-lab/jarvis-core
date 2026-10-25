@@ -15,7 +15,7 @@ def run(coro):
 
 
 def server(answers=None, seen=None, status=200, model="laya:multilingual"):
-    """Nachgebauter System-One-Server (Antwortformat wie Kev/ollaya/Jev)."""
+    """A fake System One server (answer format like Kev/ollaya/Jev)."""
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         if seen is not None:
@@ -24,10 +24,10 @@ def server(answers=None, seen=None, status=200, model="laya:multilingual"):
         if status != 200:
             return httpx.Response(status)
         default = {
-            "sensibel": {"type": "noul", "noul": 0.91},
-            "absicht": {"type": "choice", "choice": "wissen", "confidence": 0.4,
-                        "probabilities": {"wissen": 0.7, "sonstiges": 0.3}},
-            "aufwand": {"type": "score", "score": 1.2, "confidence": 0.3,
+            "sensitive": {"type": "noul", "noul": 0.91},
+            "intent": {"type": "choice", "choice": "knowledge", "confidence": 0.4,
+                        "probabilities": {"knowledge": 0.7, "other": 0.3}},
+            "effort": {"type": "score", "score": 1.2, "confidence": 0.3,
                         "legend": {"0": "simple: x", "1": "medium: y", "2": "complex: z"},
                         "probabilities": {"0": 0.1, "1": 0.6, "2": 0.3}},
         }
@@ -43,25 +43,25 @@ def test_client_request_and_parsing():
     client = SystemOneClient("http://decider:11435/", "laya:multilingual", api_key="k",
                              transport=server(seen=seen))
     result = run(client.decide("Ich habe Rückenschmerzen", {
-        "sensibel": Noul("Sensitive?"),
-        "absicht": Choice("Intent?", {"wissen": "Knowledge", "sonstiges": "Else"}),
-        "aufwand": Score("Effort?", ["simple: x", "medium: y", "complex: z"]),
+        "sensitive": Noul("Sensitive?"),
+        "intent": Choice("Intent?", {"knowledge": "Knowledge", "other": "Else"}),
+        "effort": Score("Effort?", ["simple: x", "medium: y", "complex: z"]),
     }))
     req = seen[0]
     assert req["url"] == "http://decider:11435/v1/systemone" and req["auth"] == "Bearer k"
     assert req["body"]["model"] == "laya:multilingual"
-    assert req["body"]["questions"]["absicht"] == {
+    assert req["body"]["questions"]["intent"] == {
         "type": "choice", "instructions": "Intent?",
-        "criteria": {"wissen": "Knowledge", "sonstiges": "Else"}}
+        "criteria": {"knowledge": "Knowledge", "other": "Else"}}
     a = result.answers
-    assert a["sensibel"].value == pytest.approx(0.91)
-    assert a["absicht"].value == "wissen" and a["absicht"].probabilities["wissen"] == 0.7
-    assert a["aufwand"].probabilities == {"simple: x": 0.1, "medium: y": 0.6, "complex: z": 0.3}
+    assert a["sensitive"].value == pytest.approx(0.91)
+    assert a["intent"].value == "knowledge" and a["intent"].probabilities["knowledge"] == 0.7
+    assert a["effort"].probabilities == {"simple: x": 0.1, "medium: y": 0.6, "complex: z": 0.3}
     assert result.latency_ms >= 0
 
 
 @pytest.mark.parametrize("url,local", [
-    ("http://decider:11435", True),           # Docker-Dienstname
+    ("http://decider:11435", True),           # Docker service name
     ("http://localhost:11435", True),
     ("http://127.0.0.1:8009", True),
     ("http://192.168.1.20:11435", True),
@@ -99,21 +99,21 @@ def test_local_shadow_sees_everything_and_is_compared(setup, tmp_path):
     assert shadow.cloud is False
     observer = RouterObserver(router, log, shadow=shadow)
     observe(observer, ("oliver", "Ich habe Rückenschmerzen", False),
-            ("oliver", "Etwas ganz Privates", True))
-    assert len(seen) == 2 and set(seen[0]["body"]["questions"]) == {"sensibel", "absicht", "aufwand"}
+            ("oliver", "Something very private", True))
+    assert len(seen) == 2 and set(seen[0]["body"]["questions"]) == {"sensitive", "intent", "effort"}
     rows = log._db.execute("SELECT sensitive_p, intent, complexity, error FROM shadow").fetchall()
-    assert rows[0] == (pytest.approx(0.91), "wissen", "mittel", None)
+    assert rows[0] == (pytest.approx(0.91), "knowledge", "medium", None)
 
     log.label_last("oliver", sensitive=True)
     stats = log.stats()
-    assert "Schatten-Entscheider laya:multilingual: 2 Anfragen, 0 Fehler" in stats
-    assert "im Privatmodus gesendet: 1, davon erkannt: 1 (100%)" in stats.split("Schatten")[1]
-    assert "auf korrigierten Labels: Präzision 100%" in stats
+    assert "Shadow decider laya:multilingual: 2 requests, 0 errors" in stats
+    assert "sent in private mode: 1, of which detected: 1 (100%)" in stats.split("Shadow")[1]
+    assert "on corrected labels: precision 100%" in stats
 
     out = tmp_path / "r.csv"
     log.export_csv(out)
     exported = list(csv.DictReader(out.open(encoding="utf-8")))
-    assert exported[0]["shadow_intent"] == "wissen" and exported[1]["text"] == ""
+    assert exported[0]["shadow_intent"] == "knowledge" and exported[1]["text"] == ""
 
 
 def test_cloud_shadow_never_sees_private_or_sensitive(setup):
@@ -124,14 +124,14 @@ def test_cloud_shadow_never_sees_private_or_sensitive(setup):
     assert shadow.cloud is True
     observer = RouterObserver(router, log, shadow=shadow)
     observe(observer,
-            ("oliver", "Etwas im Privatmodus", True),            # privat → nie in die Cloud
-            ("oliver", "Ich habe Rückenschmerzen", False),      # lokal sensibel → nie in die Cloud
-            ("oliver", "Schreib Tomaten auf die Liste", False))  # unkritisch → darf
+            ("oliver", "Something in private mode", True),        # private → never to the cloud
+            ("oliver", "Ich habe Rückenschmerzen", False),      # sensitive locally → never to the cloud
+            ("oliver", "Schreib Tomaten auf die Liste", False))  # harmless → allowed
     assert [s["body"]["state"] for s in seen] == ["Schreib Tomaten auf die Liste"]
-    assert "sensibel" not in seen[0]["body"]["questions"]
+    assert "sensitive" not in seen[0]["body"]["questions"]
     row = log._db.execute("SELECT cloud, sensitive_p, intent FROM shadow").fetchone()
-    assert row == (1, None, "wissen")
-    assert "(Cloud)" in log.stats()
+    assert row == (1, None, "knowledge")
+    assert "(cloud)" in log.stats()
 
 
 def test_shadow_error_is_logged_and_never_breaks(setup):
@@ -143,12 +143,12 @@ def test_shadow_error_is_logged_and_never_breaks(setup):
     assert log._db.execute("SELECT COUNT(*) FROM decisions").fetchone()[0] == 1
     error = log._db.execute("SELECT error FROM shadow").fetchone()[0]
     assert "HTTPStatusError" in error
-    assert "1 Anfragen, 1 Fehler" in log.stats()
+    assert "1 requests, 1 errors" in log.stats()
 
 
 def test_score_without_legend_maps_by_index(setup):
     log, router = setup
-    answers = {"aufwand": {"type": "score", "score": 1.8, "probabilities": {"0": 0.1, "1": 0.2, "2": 0.7}}}
+    answers = {"effort": {"type": "score", "score": 1.8, "probabilities": {"0": 0.1, "1": 0.2, "2": 0.7}}}
     shadow = ShadowDecider(SystemOneClient("http://decider:11435", "m", transport=server(answers=answers)))
     observe(RouterObserver(router, log, shadow=shadow), ("oliver", "Plane unseren Urlaub", False))
-    assert log._db.execute("SELECT complexity FROM shadow").fetchone()[0] == "komplex"
+    assert log._db.execute("SELECT complexity FROM shadow").fetchone()[0] == "complex"

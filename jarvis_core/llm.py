@@ -1,9 +1,9 @@
-"""Anbieter-Schicht für einfache Chat-Modelle ohne Werkzeuge.
+"""Provider layer for plain chat models without tools.
 
-Claude mit Werkzeugen läuft über brain.py. Hier liegen die übrigen Modelle,
-alle über eine OpenAI-kompatible Chat-API angesprochen:
-- das lokale Modell auf dem DGX Spark (vLLM/Ollama) für den Privatmodus,
-- Gemini als Ausweichmodell, wenn Claude gestört oder das Tagesbudget erreicht ist.
+Claude with tools runs through brain.py. The other models live here, all spoken to
+over an OpenAI-compatible chat API:
+- the local model (vLLM/Ollama, e.g. on a DGX Spark) for private mode and protect mode,
+- Gemini as the fallback model when Claude fails or the daily budget is used up.
 """
 
 from dataclasses import dataclass
@@ -34,7 +34,7 @@ class OpenAICompatibleChat:
         self.model = model
         self.api_key = api_key
         self.timeout = timeout
-        self._transport = transport  # für Tests
+        self._transport = transport  # for tests
 
     async def complete(self, system: str, history: list[dict], user_text: str) -> ChatReply:
         messages = [{"role": "system", "content": system}]

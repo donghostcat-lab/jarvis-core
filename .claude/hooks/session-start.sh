@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start-Hook für Claude-Code-Cloud-Sitzungen: Paket mit Testabhängigkeiten installieren.
+# Start hook for Claude Code cloud sessions: install the package with its test dependencies.
 set -euo pipefail
 
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
@@ -8,4 +8,4 @@ fi
 
 cd "${CLAUDE_PROJECT_DIR:-.}"
 python -m pip install --quiet --disable-pip-version-check --root-user-action=ignore -e ".[dev]"
-echo "jarvis-core installiert; Tests mit: python -m pytest -q"
+echo "jarvis-core installed; run the tests with: python -m pytest -q"

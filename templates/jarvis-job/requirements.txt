@@ -1,4 +1,4 @@
-# Kern mit fester Version (Commit oder Tag). Neue Version: URL anheben, Tests laufen lassen.
-jarvis-core @ https://github.com/donghostcat-lab/jarvis-core/archive/75b843682c52c0db3512998242edac61415cc833.tar.gz  # v0.1.0
+# The core at a fixed version (release tag or its commit). New version: raise the URL, run the tests.
+jarvis-core @ https://github.com/donghostcat-lab/jarvis-core/archive/refs/tags/v0.2.0.tar.gz
 anthropic>=0.45
 httpx>=0.27
