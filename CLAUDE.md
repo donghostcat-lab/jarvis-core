@@ -36,6 +36,23 @@ language for replies comes from the people file (`language`), never from the cod
 
 ### Version history
 
+- **v0.3.0**: upstreamed from Jarvis Home (PRs #15, #27, #28 there); additions only, nothing renamed.
+  - **Conversation search:** `conversations.py` with `ConversationIndex` (SQLite FTS5),
+    `IndexedJournalStore` (writes every exchange to the Markdown journal and the index) and
+    `DaySummarizer` (a small model summarises past days, numbers masked; run it nightly from the
+    profile's scheduler). `build_core_tools(..., conversations=index)` makes `journal_search` rank
+    summaries and conversations, own and shared only, with the Markdown search as fallback. Give
+    the private journal a plain `JournalStore`: private conversations are never indexed.
+  - **Rules from corrections:** `rules.py` with `RulesStore`; `build_core_tools(..., rules=store)`
+    adds `rule_save` (needs confirmation, members only), `rules_list`, `rule_delete`;
+    `Brain(..., rules=store)` puts the person's rules and a short hint into the system prompt.
+  - **Calculator:** `calc.py` (`calculate`, AST, no eval) and the tool `calculate`, always part of
+    `build_core_tools` (also for guests).
+  - **Feedback:** `feedback.py` with `FeedbackStore` (👍/👎 and reason; private mode keeps no text).
+  - **Golden questions:** `evals.py` with `Case`, `load_cases` (TOML `[[case]]`), `check_static`,
+    `RecordingTools`, `run_live` (self-check: numbers in the answer must be backed by the question
+    or a tool result; `calculate` runs for real) and `summary`. Profiles keep their cases, dummy
+    tools and CLI.
 - **v0.2.0**: everything in English, plus the v0.2.0 features. Upgrade notes for profiles:
   - **Protect mode:** `Jarvis(..., router=..., protect=True)` waits for the local router on
     every message; sensitive or unclassifiable messages go to the local model with the
@@ -83,6 +100,6 @@ language for replies comes from the people file (`language`), never from the cod
 ## Known gaps for profile repos (see docs/PROFILE-REPOS.md)
 
 - `Brain` speaks only the Anthropic interface; for "local first" it needs a tool loop over
-  OpenAI-compatible local models (e.g. Ollama or MLX). Planned for v0.3.0.
+  OpenAI-compatible local models (e.g. Ollama or MLX). Planned for v0.4.0.
 - Short-term memory is split only into normal and private; protect mode uses the private
   side for sensitive messages. Finer data classes (e.g. internal vs. confidential) are open.

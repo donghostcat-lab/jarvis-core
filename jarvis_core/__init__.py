@@ -5,4 +5,4 @@ skills and chief of staff. Channels (Telegram, Alexa, Slack …) and concrete in
 live in the profile repos.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

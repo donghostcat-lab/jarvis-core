@@ -22,6 +22,9 @@ Data, keys and memory never live in any of these repos, only on the servers that
 | `state.py`, `memory.py`, `journal.py` | SQLite state (private mode, pending confirmations, usage, last contact), short-term memory, Markdown journal per person |
 | `skills.py`, `builtin_skills/` | Reviewed Markdown skills, loaded on demand with `load_skill`; built in: `chief-of-staff`, `marketing-psychology` |
 | `chief.py` | Chief of staff state: profile, waiting-for list, decision log with review dates |
+| `conversations.py` | Conversation search: SQLite FTS5 index of every exchange, nightly daily summaries, used by `journal_search` |
+| `rules.py`, `calc.py` | Rules from corrections (confirmed per person, in every system prompt) and the safe calculator tool `calculate` |
+| `feedback.py`, `evals.py` | 👍/👎 feedback store and golden questions per role (static check for CI, live run with simulated tools and a number self-check) |
 | `router.py`, `router_seeds.py`, `decider.py` | Local router (sensitive? intent? effort?): observes, or decides in protect mode; optional shadow decider via a System-One-compatible API |
 | `llm.py`, `gemini.py` | OpenAI-compatible chat (local models, fallback) and Gemini web search |
 
