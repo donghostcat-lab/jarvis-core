@@ -30,7 +30,7 @@ Company-specific code, data, prompts, skills and integrations stay in the profil
 ## Known gaps in v0.2.0
 
 - `Brain` speaks the Anthropic Messages API only. Local-first deployments need a tool loop
-  over OpenAI-compatible local models (Ollama, MLX, vLLM). Planned for v0.3.0.
+  over OpenAI-compatible local models (Ollama, MLX, vLLM). Planned for v0.4.0.
 - Short-term memory knows two classes (normal and private). Protect mode keeps sensitive
   messages on the private side; finer data classes are still up to the profile.
 

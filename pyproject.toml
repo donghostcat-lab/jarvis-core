@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jarvis-core"
-version = "0.2.0"
+version = "0.3.0"
 description = "Shared core of Jarvis: Claude tool loop with roles and confirmations, private and protect mode, local router, skills, chief of staff."
 readme = "README.md"
 license = { text = "MIT" }

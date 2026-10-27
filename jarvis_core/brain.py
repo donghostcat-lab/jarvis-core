@@ -101,8 +101,10 @@ class Brain:
 
     def __init__(self, client, model: str, tools: ToolRegistry, timezone: str,
                  max_steps: int = 8, max_tokens: int = 1500,
-                 skills: SkillLibrary | None = None, persona: str = DEFAULT_PERSONA):
-        """persona: who Jarvis is in this profile, e.g. "the team's assistant" (Job)."""
+                 skills: SkillLibrary | None = None, persona: str = DEFAULT_PERSONA,
+                 rules=None):
+        """persona: who Jarvis is in this profile, e.g. "the team's assistant" (Job).
+        rules: a RulesStore (rules.py); the person's confirmed rules go into the system prompt."""
         self.client = client
         self.model = model
         self.tools = tools
@@ -111,6 +113,7 @@ class Brain:
         self.max_tokens = max_tokens
         self.skills = skills
         self.persona = persona
+        self.rules = rules
 
     def _system(self, user: User, voice: bool = False, note: str = "") -> list[dict]:
         today = datetime.now(self.tz).strftime("%A, %Y-%m-%d")
@@ -121,7 +124,8 @@ class Brain:
             voice_hint=VOICE_HINT if voice else "",
             # Voice stays short and fast: no skills offered there.
             skills_hint=self.skills.catalog(user.role) if self.skills and not voice else "",
-            note=note,
+            # Rules change rarely and stay in the prompt cache; the note for this one reply comes last.
+            note=(self.rules.note(user) if self.rules is not None else "") + note,
         )
         # Prompt caching: tools and system prompt stay the same within one tool loop
         # and are then computed in full only once.

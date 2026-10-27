@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import Awaitable, Callable
 from zoneinfo import ZoneInfo
 
+from .calc import calculate, format_number
 from .chief import PROFILE_FIELDS, ChiefStore, urgency
-from .journal import JournalStore
+from .journal import HOUSEHOLD, JournalStore
 from .skills import SkillLibrary
 from .users import ADULTS, ALL_MEMBERS, Role, User
 
@@ -143,12 +144,15 @@ NOTE_SCHEMA = {
 
 def build_core_tools(journals: JournalStore, wiki_dir: Path, timezone: str,
                      web_search=None, skills: SkillLibrary | None = None,
-                     chief: ChiefStore | None = None) -> ToolRegistry:
+                     chief: ChiefStore | None = None, conversations=None,
+                     rules=None) -> ToolRegistry:
     """General tools of every Jarvis installation (Home and Job).
 
     web_search: optionally an object with `async search(question, user_id) -> str` (Gemini).
     skills: reviewed instructions (skills.py). chief: profile, "waiting for" and decisions
-    for the chief of staff (chief.py). Profile repos (jarvis-home, jarvis-job) add their own
+    for the chief of staff (chief.py). conversations: a ConversationIndex (conversations.py) that
+    journal_search uses before the Markdown files. rules: a RulesStore (rules.py) for rule_save,
+    rules_list and rule_delete. The calculator is always there. Profile repos (jarvis-home, jarvis-job) add their own
     tools to the same ToolRegistry."""
     tz = ZoneInfo(timezone)
     registry = ToolRegistry()
@@ -162,8 +166,20 @@ def build_core_tools(journals: JournalStore, wiki_dir: Path, timezone: str,
 
     async def journal_search(args: dict, ctx: ToolContext) -> str:
         # Only the person's own journal and the shared one, never those of other people.
+        limit = int(args.get("max_results", 5))
+        if conversations is not None:
+            hits = conversations.search([ctx.user.id, HOUSEHOLD], str(args["query"]), limit)
+            if hits:
+                return "\n".join(f"- {h}" for h in hits)
+        # Nothing in the index (or no index): search the Markdown files.
         roots = [journals.for_user(ctx.user).root, journals.household.root]
-        return search_markdown(roots, args["query"], int(args.get("max_results", 5)))
+        return search_markdown(roots, args["query"], limit)
+
+    async def calc(args: dict, ctx: ToolContext) -> str:
+        try:
+            return f"{args['expression']} = {format_number(calculate(str(args['expression'])))}"
+        except (ValueError, SyntaxError, ZeroDivisionError, TypeError, OverflowError) as exc:
+            return f"Cannot be calculated: {exc}"
 
     async def remember_note(args: dict, ctx: ToolContext) -> str:
         journals.for_user(ctx.user).add_note(args["text"])
@@ -194,11 +210,25 @@ def build_core_tools(journals: JournalStore, wiki_dir: Path, timezone: str,
         name="journal_search",
         description=(
             "Searches earlier conversations of the current person and the notes shared with "
-            "everyone. Useful for things from the last few days that are not in the wiki yet."
+            "everyone (daily summaries and conversations, best hits first). Use it before you say "
+            "that you don't know something."
         ),
         input_schema=SEARCH_SCHEMA,
         handler=journal_search,
     ))
+    registry.add(Tool(
+        name="calculate",
+        description=("Calculates exactly: basic arithmetic, parentheses, percent as *0.19, "
+                     "round/min/max/sum/sqrt; decimal point, not comma. Use it for every sum, difference, "
+                     "percentage or conversion instead of calculating in your head."),
+        input_schema={"type": "object", "properties": {
+            "expression": {"type": "string", "description": "e.g. (412.5 + 87) * 1.19"}}, "required": ["expression"]},
+        handler=calc,
+        roles=ALL_MEMBERS | {Role.GUEST},
+    ))
+    if rules is not None:
+        from .rules import add_rule_tools
+        add_rule_tools(registry, rules)
     registry.add(Tool(
         name="remember_note",
         description=(
